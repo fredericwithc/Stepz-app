@@ -1,4 +1,50 @@
 const { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useContext, createContext } = React;
+
+/** ≤768px: uma coluna, tabs com scroll, menos padding. ≤1024px: tablet (opcional). */
+const STEPZ_BREAKPOINT_MOBILE = 768;
+const STEPZ_BREAKPOINT_TABLET = 1024;
+
+const StepzViewportContext = createContext({
+  width: 1024,
+  isMobile: false,
+  isTablet: false,
+});
+
+function StepzViewportProvider({ children }) {
+  const [width, setWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1024));
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+    };
+  }, []);
+  const value = useMemo(() => ({
+    width,
+    isMobile: width <= STEPZ_BREAKPOINT_MOBILE,
+    isTablet: width <= STEPZ_BREAKPOINT_TABLET,
+  }), [width]);
+  return (
+    <StepzViewportContext.Provider value={value}>
+      {children}
+    </StepzViewportContext.Provider>
+  );
+}
+
+function useStepzViewport() {
+  return useContext(StepzViewportContext);
+}
+
+function AppRoot() {
+  return (
+    <StepzViewportProvider>
+      <App />
+    </StepzViewportProvider>
+  );
+}
+
 const TASK_STATUS = [
   { id: 'todo', label: 'A fazer' },
   { id: 'doing', label: 'Em andamento' },
@@ -474,6 +520,7 @@ function App() {
   const [goalModal, setGoalModal] = useState(null);
   const [habitModalOpen, setHabitModalOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState(null);
+  const { isMobile } = useStepzViewport();
 
   useEffect(() => {
     const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
@@ -1062,7 +1109,14 @@ function App() {
       />
 
       <TaskGridColumnsProvider>
-      <div style={{ maxWidth: 1300, margin: '0 auto', padding: '24px 28px 60px' }}>
+      <div style={{
+        maxWidth: 1300,
+        margin: '0 auto',
+        padding: isMobile ? '16px 14px 56px' : '24px 28px 60px',
+        width: '100%',
+        boxSizing: 'border-box',
+        minWidth: 0,
+      }}>
         {tab === 'home' && (
           <HomeView
             state={state}
@@ -1195,6 +1249,7 @@ function App() {
 }
 
 function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout }) {
+  const { isMobile } = useStepzViewport();
   const tabs = [
     { id: 'home', label: 'Início' },
     { id: 'tasks', label: 'Tasks' },
@@ -1205,28 +1260,48 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout }) {
   ];
   const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
   return (
-    <div style={{ borderBottom: `1px solid ${stepzTokens.border}`, background: stepzTokens.bg, position: 'sticky', top: 0, zIndex: 10 }}>
-      <div style={{ maxWidth: 1300, margin: '0 auto', padding: '18px 28px 0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <div style={{
+      borderBottom: `1px solid ${stepzTokens.border}`,
+      background: stepzTokens.bg,
+      position: 'sticky',
+      top: 0,
+      zIndex: 10,
+      paddingTop: 'env(safe-area-inset-top, 0px)',
+    }}>
+      <div style={{
+        maxWidth: 1300,
+        margin: '0 auto',
+        padding: isMobile ? '12px 14px 0' : '18px 28px 0',
+        width: '100%',
+        boxSizing: 'border-box',
+        minWidth: 0,
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: isMobile ? 10 : 12,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
             <img
               src="logos/svg/lockup-color-transparent-white-text.svg"
               alt="Stepz"
               draggable={false}
-              style={{ height: 48, width: 'auto', display: 'block', objectFit: 'contain' }}
+              style={{ height: isMobile ? 40 : 48, width: 'auto', display: 'block', objectFit: 'contain' }}
             />
             <div style={{ fontSize: 12, color: stepzTokens.textFaint, marginLeft: 4, padding: '3px 8px', background: 'rgba(255,255,255,0.04)', borderRadius: 4 }}>
               {totalSteps} {totalSteps === 1 ? 'degrau' : 'degraus'}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 14, flexWrap: 'wrap', justifyContent: 'flex-end', flex: isMobile ? '1 1 auto' : 'none', minWidth: 0 }}>
             {userEmail ? (
               <span
                 title={userEmail}
                 style={{
                   fontSize: 12,
                   color: stepzTokens.textDim,
-                  maxWidth: 200,
+                  maxWidth: isMobile ? 160 : 200,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -1235,7 +1310,7 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout }) {
                 {userEmail}
               </span>
             ) : null}
-            <div style={{ fontSize: 13, color: stepzTokens.textDim }}>{today}</div>
+            <div style={{ fontSize: isMobile ? 12 : 13, color: stepzTokens.textDim, textAlign: 'right', lineHeight: 1.25 }}>{today}</div>
             {typeof onLogout === 'function' ? (
               <button
                 type="button"
@@ -1257,14 +1332,32 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout }) {
             ) : null}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 4, marginTop: 14 }}>
+        <div style={{
+          display: 'flex',
+          gap: isMobile ? 2 : 4,
+          marginTop: 14,
+          overflowX: isMobile ? 'auto' : 'visible',
+          WebkitOverflowScrolling: 'touch',
+          flexWrap: 'nowrap',
+          paddingBottom: 2,
+          marginLeft: isMobile ? -4 : 0,
+          marginRight: isMobile ? -4 : 0,
+          scrollbarWidth: 'thin',
+        }}>
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
+              type="button"
               style={{
-                padding: '10px 14px', fontSize: 14, background: 'transparent', border: 'none',
+                padding: isMobile ? '10px 12px' : '10px 14px',
+                fontSize: isMobile ? 13 : 14,
+                background: 'transparent',
+                border: 'none',
+                flexShrink: 0,
                 color: tab === t.id ? stepzTokens.text : stepzTokens.textDim,
                 borderBottom: tab === t.id ? `2px solid ${stepzTokens.accent}` : '2px solid transparent',
-                fontWeight: tab === t.id ? 500 : 400, cursor: 'pointer', fontFamily: stepzTokens.font,
+                fontWeight: tab === t.id ? 500 : 400,
+                cursor: 'pointer',
+                fontFamily: stepzTokens.font,
               }}>{t.label}</button>
           ))}
         </div>
@@ -1276,6 +1369,7 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout }) {
 function HomeView({ state, totalSteps, todaySteps, dayStreak,
   onCompleteTask, onUncompleteTask, onAddTask, onDeleteTask, onOpenCreateModal, onEditTask, onUpdateTask, onRenameProject, onToggleHabit, onEditHabit, onStepClick,
   taskTagColors, allKnownTaskTags, onSetTaskTagColor }) {
+  const { isMobile } = useStepzViewport();
   const [tagEditor, setTagEditor] = useState(null);
   const [priorityEditor, setPriorityEditor] = useState(null);
   const [statusEditor, setStatusEditor] = useState(null);
@@ -1288,8 +1382,13 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
   const todayByProject = groupTasksByProject(todayTasks);
   return (
     <>
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: isMobile ? '1fr' : '1fr 340px',
+      gap: isMobile ? 16 : 20,
+      minWidth: 0,
+    }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 14 : 18, minWidth: 0 }}>
         <LiveStairs
           steps={state.steps}
           tasks={state.tasks}
@@ -1297,8 +1396,13 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
           categories={state.categories}
           taskTagColors={taskTagColors}
           onStepClick={onStepClick}
+          layoutCompact={isMobile}
         />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+          gap: isMobile ? 8 : 12,
+        }}>
           <Tile label="Total" value={totalSteps} accent={stepzTokens.accent} />
           <Tile label="Hoje" value={todaySteps} accent={stepzTokens.warn} />
           <Tile label="Streak" value={`${dayStreak}d`} accent={stepzTokens.success} />
@@ -1324,7 +1428,7 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
           ))}
         </Panel2>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 14 : 18, minWidth: 0 }}>
         <Panel2 title="Hábitos diários">
           {state.habits.length === 0 ? <Empty msg="Vá para Hábitos para criar." small /> :
             state.habits.map(h => (
@@ -1389,7 +1493,16 @@ function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCre
 
   return (
     <>
-    <div style={{ maxWidth: 'min(1180px, 100%)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div style={{
+      maxWidth: 'min(1180px, 100%)',
+      margin: '0 auto',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 18,
+      width: '100%',
+      minWidth: 0,
+      boxSizing: 'border-box',
+    }}>
       <Panel2 title={`Tasks por projeto · ${openCount} abertas`} action={<TaskAddButton onClick={onOpenCreateModal} />}>
         {state.tasks.length === 0 ? (
           <Empty msg="Nenhuma task ainda. Crie uma acima." />
@@ -1585,6 +1698,7 @@ const habitBarControlStyle = {
 
 function HabitsAddBar({ onAdd, onOpenCreateModal }) {
   const [val, setVal] = useState('');
+  const { isMobile } = useStepzViewport();
   const submit = () => {
     const t = val.trim();
     if (!t) return;
@@ -1592,13 +1706,19 @@ function HabitsAddBar({ onAdd, onOpenCreateModal }) {
     setVal('');
   };
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', width: isMobile ? '100%' : 'auto' }}>
       <input
         value={val}
         onChange={(e) => setVal(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && submit()}
         placeholder="Novo hábito…"
-        style={{ ...habitBarControlStyle, flex: '1 1 160px', width: 260, maxWidth: '52vw', minWidth: 160 }}
+        style={{
+          ...habitBarControlStyle,
+          flex: isMobile ? '1 1 100%' : '1 1 160px',
+          width: isMobile ? '100%' : 260,
+          maxWidth: isMobile ? '100%' : '52vw',
+          minWidth: isMobile ? 0 : 160,
+        }}
       />
       <button
         type="button"
@@ -1639,7 +1759,7 @@ function HabitsAddBar({ onAdd, onOpenCreateModal }) {
 
 function HabitsView({ state, onToggle, onAdd, onDelete, onOpenCreateModal, onEditHabit }) {
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18, width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
       <Panel2 title="Seus hábitos" action={<HabitsAddBar onAdd={onAdd} onOpenCreateModal={onOpenCreateModal} />}>
         {state.habits.length === 0 ? <Empty msg="Crie seu primeiro hábito acima." /> :
           state.habits.map(h => (
@@ -1873,7 +1993,16 @@ function GoalsView({ state, onNew, onEdit, onDeleteGoal, onToggleMilestone }) {
   }, [state.goals]);
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
+    <div style={{
+      maxWidth: 1100,
+      margin: '0 auto',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 22,
+      width: '100%',
+      minWidth: 0,
+      boxSizing: 'border-box',
+    }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: -0.5 }}>Minhas Metas</div>
@@ -2435,6 +2564,7 @@ function GoalModal({ goal, categories, onClose, onSave, onDelete }) {
 }
 
 function JourneyView({ state, totalSteps, currentLevel, onStepClick, taskTagColors = {} }) {
+  const { isMobile } = useStepzViewport();
   const grouped = useMemo(() => {
     const byDate = {};
     [...state.steps].reverse().forEach((s, ri) => {
@@ -2446,7 +2576,7 @@ function JourneyView({ state, totalSteps, currentLevel, onStepClick, taskTagColo
   }, [state.steps]);
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18, width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
           <LiveStairs
             steps={state.steps}
             tasks={state.tasks}
@@ -2454,6 +2584,7 @@ function JourneyView({ state, totalSteps, currentLevel, onStepClick, taskTagColo
             categories={state.categories}
             taskTagColors={taskTagColors}
             onStepClick={onStepClick}
+            layoutCompact={isMobile}
           />
       <Panel2 title={`${totalSteps} ${totalSteps === 1 ? 'degrau' : 'degraus'} · Nível ${currentLevel}`}>
         {grouped.length === 0 ? <Empty msg="Sua jornada começa quando você completa a primeira task." /> :
@@ -2487,13 +2618,22 @@ function JourneyView({ state, totalSteps, currentLevel, onStepClick, taskTagColo
 
 // ── Reusable bits ──
 function Tile({ label, value, accent }) {
+  const { isMobile } = useStepzViewport();
   return (
     <div style={{
       background: stepzTokens.panel, border: `1px solid ${stepzTokens.border}`,
-      borderRadius: 12, padding: '14px 16px',
+      borderRadius: 12, padding: isMobile ? '10px 12px' : '14px 16px',
+      minWidth: 0,
     }}>
-      <div style={{ fontSize: 11, color: stepzTokens.textDim, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: -0.8, color: accent || stepzTokens.text, fontVariantNumeric: 'tabular-nums' }}>
+      <div style={{ fontSize: isMobile ? 10 : 11, color: stepzTokens.textDim, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>{label}</div>
+      <div style={{
+        fontSize: isMobile ? 20 : 26,
+        fontWeight: 600,
+        letterSpacing: -0.8,
+        color: accent || stepzTokens.text,
+        fontVariantNumeric: 'tabular-nums',
+        lineHeight: 1.1,
+      }}>
         {value}
       </div>
     </div>
@@ -2501,13 +2641,22 @@ function Tile({ label, value, accent }) {
 }
 
 function Panel2({ title, action, children }) {
+  const { isMobile } = useStepzViewport();
   return (
     <div style={{
       background: stepzTokens.panel, border: `1px solid ${stepzTokens.border}`,
-      borderRadius: 14, padding: '18px 22px',
+      borderRadius: isMobile ? 12 : 14, padding: isMobile ? '14px 14px' : '18px 22px',
+      minWidth: 0,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 12 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: -0.2 }}>{title}</div>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 14,
+        gap: 12,
+        flexWrap: isMobile ? 'wrap' : 'nowrap',
+      }}>
+        <div style={{ fontSize: isMobile ? 13 : 15, fontWeight: 600, letterSpacing: -0.2 }}>{title}</div>
         {action}
       </div>
       {children}
@@ -2520,12 +2669,13 @@ const PATAMAR_COLLECTION_ICONS = ['🌅', '🥁', '🌊', '🌳', '🔨', '🧬'
 
 function PatamarCollectionGrid({ totalSteps }) {
   const currentLevel = Math.floor(totalSteps / STEPS_PER_LEVEL) + 1;
+  const { isMobile } = useStepzViewport();
 
   return (
     <div style={{
       display: 'grid',
       gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-      gap: 8,
+      gap: isMobile ? 6 : 8,
     }}>
       {LEVEL_META.slice(0, 8).map((l, i) => {
         const lvl = i + 1;
@@ -2558,11 +2708,11 @@ function PatamarCollectionGrid({ totalSteps }) {
             title={locked ? 'Complete o patamar anterior' : l.name}
             style={{
               aspectRatio: '1',
-              borderRadius: 12,
+              borderRadius: isMobile ? 8 : 12,
               background: bg,
               border: borderStyle,
               boxShadow,
-              padding: '8px 6px 6px',
+              padding: isMobile ? '5px 4px 4px' : '8px 6px 6px',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -2574,9 +2724,9 @@ function PatamarCollectionGrid({ totalSteps }) {
             }}
           >
             <div style={{
-              fontSize: 'clamp(16px, 4.2vw, 22px)',
+              fontSize: isMobile ? 'clamp(11px, 3.4vw, 14px)' : 'clamp(16px, 4.2vw, 22px)',
               lineHeight: 1,
-              marginTop: 2,
+              marginTop: 1,
               filter: locked ? 'grayscale(1) brightness(0.85)' : 'none',
             }}>
               {PATAMAR_COLLECTION_ICONS[i]}
@@ -2587,12 +2737,12 @@ function PatamarCollectionGrid({ totalSteps }) {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 3,
+              gap: isMobile ? 1 : 3,
               width: '100%',
               minHeight: 0,
             }}>
               <div style={{
-                fontSize: 10,
+                fontSize: isMobile ? 8 : 10,
                 fontWeight: 700,
                 color: locked ? 'rgba(242,239,233,0.42)' : '#f2efe9',
                 lineHeight: 1.15,
@@ -2604,7 +2754,7 @@ function PatamarCollectionGrid({ totalSteps }) {
                 {l.name}
               </div>
               <div style={{
-                fontSize: 9,
+                fontSize: isMobile ? 7 : 9,
                 fontWeight: 500,
                 letterSpacing: 0.02,
                 color: locked
@@ -2619,7 +2769,7 @@ function PatamarCollectionGrid({ totalSteps }) {
             {active ? (
               <div style={{
                 width: '100%',
-                height: 4,
+                height: isMobile ? 3 : 4,
                 borderRadius: 3,
                 background: 'rgba(0,0,0,0.35)',
                 overflow: 'hidden',
@@ -2634,7 +2784,7 @@ function PatamarCollectionGrid({ totalSteps }) {
                 }} />
               </div>
             ) : (
-              <div style={{ height: 4, flexShrink: 0 }} aria-hidden />
+              <div style={{ height: isMobile ? 3 : 4, flexShrink: 0 }} aria-hidden />
             )}
           </div>
         );
@@ -2745,6 +2895,7 @@ function TaskGridColumnsProvider({ children }) {
 
 function TaskTableHeaderRow() {
   const ctx = useContext(TaskGridColumnsContext);
+  const { isMobile } = useStepzViewport();
   const gridTemplateColumns = ctx?.gridTemplateColumns ?? buildTaskGridTemplate(TASK_GRID_WIDTH_DEFAULTS);
   const beginResize = ctx?.beginResize;
 
@@ -2798,9 +2949,9 @@ function TaskTableHeaderRow() {
     <div style={{
       display: 'grid',
       gridTemplateColumns,
-      gap: '0 10px',
+      gap: isMobile ? '0 8px' : '0 10px',
       alignItems: 'center',
-      padding: '4px 10px 8px',
+      padding: isMobile ? '3px 8px 6px' : '4px 10px 8px',
       borderBottom: `1px solid ${stepzTokens.border}`,
       marginBottom: 2,
     }}>
@@ -3653,6 +3804,7 @@ function TaskTagsTriggerCell({ tagsList, taskTagColors, taskId, onTagsPopoverOpe
 
 function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEditTask, taskTagColors = {}, onTagsPopoverOpen, onPriorityPopoverOpen, onStatusPopoverOpen }) {
   const gridCtx = useContext(TaskGridColumnsContext);
+  const { isMobile } = useStepzViewport();
   const gridTemplateColumns = gridCtx?.gridTemplateColumns ?? buildTaskGridTemplate(TASK_GRID_WIDTH_DEFAULTS);
   const priority = TASK_PRIORITIES.find(p => p.id === task.priority) || TASK_PRIORITIES[1];
   const status = TASK_STATUS.find(s => s.id === normalizeTaskStatus(task.status, task.done)) || TASK_STATUS[0];
@@ -3693,9 +3845,9 @@ function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEd
   const rowStyle = {
     display: 'grid',
     gridTemplateColumns,
-    gap: '0 10px',
+    gap: isMobile ? '0 8px' : '0 10px',
     alignItems: 'center',
-    padding: '7px 10px',
+    padding: isMobile ? '6px 8px' : '7px 10px',
     borderBottom: `1px solid ${stepzTokens.border}`,
   };
 
@@ -3706,20 +3858,21 @@ function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEd
           type="button"
           onClick={() => task.done ? onUncomplete && onUncomplete() : onComplete()}
           style={{
-            width: 22, height: 22, borderRadius: 11,
+            width: isMobile ? 18 : 22, height: isMobile ? 18 : 22,
+            borderRadius: isMobile ? 9 : 11,
             border: `1.5px solid ${task.done ? stepzTokens.success : 'rgba(255,255,255,0.25)'}`,
             background: task.done ? stepzTokens.success : 'transparent',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0, cursor: 'pointer', padding: 0,
           }}>
-          {task.done && <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#0a0a0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-6" /></svg>}
+          {task.done && <svg width={isMobile ? 10 : 12} height={isMobile ? 10 : 12} viewBox="0 0 12 12" fill="none" stroke="#0a0a0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6l3 3 5-6" /></svg>}
         </button>
 
         <div
           onClick={onEditTask ? (e) => { e.stopPropagation(); onEditTask(); } : undefined}
           title={task.title}
           style={{
-            fontSize: 12,
+            fontSize: isMobile ? 11 : 12,
             fontWeight: 600,
             letterSpacing: -0.2,
             color: task.done ? stepzTokens.textFaint : stepzTokens.text,
@@ -3759,12 +3912,12 @@ function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEd
               alignItems: 'center',
               gap: 6,
               maxWidth: '100%',
-              padding: '3px 9px',
+              padding: isMobile ? '2px 8px' : '3px 9px',
               borderRadius: 999,
               border: `1px solid ${statusOptionBorderSoft(statusColor)}`,
               background: 'rgba(255,255,255,0.05)',
               color: statusColor,
-              fontSize: 10,
+              fontSize: isMobile ? 9 : 10,
               fontWeight: 600,
               cursor: onStatusPopoverOpen ? 'pointer' : 'default',
               fontFamily: stepzTokens.font,
@@ -3914,6 +4067,7 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
   const [open, setOpen] = useState(true);
   const [editing, setEditing] = useState(false);
   const [newName, setNewName] = useState(project);
+  const { isMobile } = useStepzViewport();
   useEffect(() => {
     if (!editing) setNewName(project);
   }, [project, editing]);
@@ -3923,21 +4077,21 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
   };
   return (
     <div style={{
-      marginBottom: 12,
+      marginBottom: isMobile ? 10 : 12,
       background: stepzTokens.panel2,
       border: `1px solid ${stepzTokens.border}`,
       borderRadius: 10,
-      padding: '10px 12px 0',
+      padding: isMobile ? '8px 10px 0' : '10px 12px 0',
     }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 10,
+        gap: isMobile ? 8 : 10,
         flexWrap: 'nowrap',
         background: 'rgba(255,255,255,0.03)',
         border: `1px solid ${stepzTokens.border}`,
         borderRadius: 10,
-        padding: '8px 12px',
+        padding: isMobile ? '6px 10px' : '8px 12px',
         marginBottom: open ? 8 : 0,
       }}>
         <button
@@ -3949,7 +4103,7 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
             border: 'none',
             color: stepzTokens.textDim,
             cursor: 'pointer',
-            fontSize: 13,
+            fontSize: isMobile ? 12 : 13,
             padding: 0,
             flexShrink: 0,
             width: 18,
@@ -3970,7 +4124,7 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
                 background: 'transparent',
                 border: 'none',
                 color: stepzTokens.text,
-                fontSize: 13,
+                fontSize: isMobile ? 12 : 13,
                 fontWeight: 600,
                 letterSpacing: -0.2,
                 cursor: 'pointer',
@@ -3982,7 +4136,7 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
             </button>
             <span style={{
               fontFamily: stepzTokens.fontMono,
-              fontSize: 11,
+              fontSize: isMobile ? 10 : 11,
               color: stepzTokens.textFaint,
               flexShrink: 0,
             }}>
@@ -5034,4 +5188,4 @@ function formatDate(iso) {
   return d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById('root')).render(<AppRoot />);

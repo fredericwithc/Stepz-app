@@ -120,6 +120,23 @@ const POSTIT_TAGS = [
   { id: 'contas',    label: 'Contas',     icon: '💰' },
 ];
 
+/** Mesmo breakpoint que app.jsx (768) — Post-its é ficheiro à parte, sem contexto partilhado. */
+const STEPZ_POSTITS_MOBILE_MAX = 768;
+
+function useStepzPostitsNarrow() {
+  const [narrow, setNarrow] = React.useState(() => typeof window !== 'undefined' && window.innerWidth <= STEPZ_POSTITS_MOBILE_MAX);
+  React.useEffect(() => {
+    const fn = () => setNarrow(window.innerWidth <= STEPZ_POSTITS_MOBILE_MAX);
+    window.addEventListener('resize', fn);
+    window.addEventListener('orientationchange', fn);
+    return () => {
+      window.removeEventListener('resize', fn);
+      window.removeEventListener('orientationchange', fn);
+    };
+  }, []);
+  return narrow;
+}
+
 function defaultPostits() {
   return [
     {
@@ -137,6 +154,7 @@ function defaultPostits() {
 
 function PostitsView({ state, setState }) {
   const postits = state.postits || [];
+  const narrow = useStepzPostitsNarrow();
   const [filter, setFilter] = React.useState('all');
   const [editing, setEditing] = React.useState(null); // postit id
 
@@ -215,14 +233,42 @@ function PostitsView({ state, setState }) {
         padding: 0 2px;
       }
     ` }} />
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 180px) minmax(0, 1fr) minmax(240px, 300px)', gap: 24, alignItems: 'start' }}>
-      {/* Sidebar */}
-      <div style={{ position: 'sticky', top: 80 }}>
-        <div style={{ fontSize: 11, color: stepzTokens.textDim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, paddingLeft: 10 }}>
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: narrow ? 'minmax(0, 1fr)' : 'minmax(160px, 180px) minmax(0, 1fr) minmax(240px, 300px)',
+      gap: narrow ? 16 : 24,
+      alignItems: 'start',
+      width: '100%',
+      minWidth: 0,
+    }}>
+      {/* Sidebar / filtros */}
+      <div style={{
+        position: narrow ? 'relative' : 'sticky',
+        top: narrow ? undefined : 80,
+        width: '100%',
+        minWidth: 0,
+      }}>
+        <div style={{
+          fontSize: 11,
+          color: stepzTokens.textDim,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+          marginBottom: narrow ? 8 : 10,
+          paddingLeft: narrow ? 2 : 10,
+        }}>
           Categorias
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{
+          display: 'flex',
+          flexDirection: narrow ? 'row' : 'column',
+          gap: narrow ? 6 : 4,
+          overflowX: narrow ? 'auto' : 'visible',
+          WebkitOverflowScrolling: 'touch',
+          flexWrap: 'nowrap',
+          paddingBottom: narrow ? 6 : 0,
+        }}>
           <SidebarItem
+            chip={narrow}
             active={filter === 'all'}
             onClick={() => setFilter('all')}
             icon="◳"
@@ -231,6 +277,7 @@ function PostitsView({ state, setState }) {
           />
           {POSTIT_TAGS.map(t => (
             <SidebarItem
+              chip={narrow}
               key={t.id}
               active={filter === t.id}
               onClick={() => setFilter(t.id)}
@@ -240,7 +287,7 @@ function PostitsView({ state, setState }) {
             />
           ))}
         </div>
-        <button onClick={addPostit} style={{
+        <button type="button" onClick={addPostit} style={{
           marginTop: 16, width: '100%',
           background: stepzTokens.accentGradient || stepzTokens.accent, color: '#0a0a0b', border: 'none',
           padding: '10px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600,
@@ -251,8 +298,16 @@ function PostitsView({ state, setState }) {
       </div>
 
       {/* Board */}
-      <div>
-        <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: -0.6, marginBottom: 18, fontFamily: 'Georgia, serif', fontStyle: 'italic' }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{
+          fontSize: narrow ? 22 : 26,
+          fontWeight: 700,
+          letterSpacing: -0.6,
+          marginBottom: narrow ? 14 : 18,
+          fontFamily: 'Georgia, serif',
+          fontStyle: 'italic',
+          lineHeight: 1.15,
+        }}>
           Post-its
         </div>
         {filtered.length === 0 ? (
@@ -271,7 +326,7 @@ function PostitsView({ state, setState }) {
           </div>
         ) : (
           <div style={{
-            columnCount: 3,
+            columnCount: narrow ? 1 : 3,
             columnGap: 16,
           }} className="postit-masonry">
             {filtered.map(p => (
@@ -289,7 +344,16 @@ function PostitsView({ state, setState }) {
         )}
       </div>
 
-      <div style={{ position: 'sticky', top: 80, alignSelf: 'start', maxHeight: 'calc(100vh - 96px)', overflowY: 'auto' }}>
+      <div style={{
+        position: narrow ? 'relative' : 'sticky',
+        top: narrow ? undefined : 80,
+        alignSelf: 'start',
+        maxHeight: narrow ? 'min(42vh, 380px)' : 'calc(100vh - 96px)',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        width: '100%',
+        minWidth: 0,
+      }}>
         <PostitCommentsPanel
           postit={activePostit}
           onUpdateBody={updateCommentBody}
@@ -436,22 +500,24 @@ function PostitCommentsPanel({ postit, onUpdateBody, onDelete }) {
   );
 }
 
-function SidebarItem({ active, onClick, icon, label, count }) {
+function SidebarItem({ active, onClick, icon, label, count, chip }) {
   return (
-    <button onClick={onClick}
+    <button type="button" onClick={onClick}
       onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
       onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
       style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '8px 10px', borderRadius: 6, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', gap: chip ? 6 : 10,
+        padding: chip ? '7px 10px' : '8px 10px', borderRadius: 6, cursor: 'pointer',
         background: active ? 'rgba(255,255,255,0.06)' : 'transparent',
         border: `1px solid ${active ? stepzTokens.borderStrong : 'transparent'}`,
         color: active ? stepzTokens.text : stepzTokens.textDim,
-        fontSize: 13, fontFamily: stepzTokens.font,
+        fontSize: chip ? 12 : 13, fontFamily: stepzTokens.font,
         textAlign: 'left',
+        flexShrink: chip ? 0 : undefined,
+        whiteSpace: chip ? 'nowrap' : undefined,
       }}>
       <span style={{ width: 16, fontSize: 12, opacity: 0.85 }}>{icon}</span>
-      <span style={{ flex: 1 }}>{label}</span>
+      <span style={{ flex: chip ? 'none' : 1, textOverflow: chip ? 'ellipsis' : undefined, overflow: chip ? 'hidden' : undefined }}>{label}</span>
       {count > 0 && (
         <span style={{ fontSize: 10, color: stepzTokens.textFaint, fontFamily: stepzTokens.fontMono }}>
           {count}

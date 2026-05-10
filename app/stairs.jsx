@@ -285,9 +285,13 @@ function LiveStairs({
   habits = [],
   categories,
   taskTagColors = {},
+  layoutCompact = false,
 }) {
   const containerRef = React.useRef(null);
-  const [size, setSize] = React.useState({ w: 900, h: 460 });
+  /* Inicia com 0×0 para que o efeito de "primeira centralização" só dispare depois
+     de o ResizeObserver medir o tamanho real do contentor. Sem isto, em ecrãs estreitos
+     a inicialização corria com 900×460 (default antigo) e a escada ficava fora do viewport. */
+  const [size, setSize] = React.useState({ w: 0, h: 0 });
   const [zoom, setZoom] = React.useState(1);
   const [pan, setPan] = React.useState({ x: 0, y: 0 });
   const [hover, setHover] = React.useState(null);
@@ -658,20 +662,44 @@ function LiveStairs({
       borderRadius: 16,
       overflow: 'hidden',
       position: 'relative',
-      height: 500,
+      height: layoutCompact ? 'clamp(280px, 46vh, 420px)' : 500,
       display: 'flex', flexDirection: 'column',
+      minWidth: 0,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px 14px', borderBottom: `1px solid ${stepzTokens.border}` }}>
-        <div>
+      <div style={{
+        display: 'flex',
+        alignItems: layoutCompact ? 'flex-start' : 'center',
+        justifyContent: 'space-between',
+        flexWrap: layoutCompact ? 'wrap' : 'nowrap',
+        gap: layoutCompact ? 10 : 0,
+        rowGap: layoutCompact ? 10 : undefined,
+        padding: layoutCompact ? '14px 14px 12px' : '18px 22px 14px',
+        borderBottom: `1px solid ${stepzTokens.border}`,
+      }}>
+        <div style={{ flex: layoutCompact ? '1 1 100%' : 'none', minWidth: 0 }}>
           <div style={{ fontSize: 11, color: stepzTokens.textDim, letterSpacing: 0.5, textTransform: 'uppercase' }}>sua escada</div>
-          <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.6, marginTop: 2 }}>
+          <div style={{
+            fontSize: layoutCompact ? 17 : 22,
+            fontWeight: 600,
+            letterSpacing: -0.6,
+            marginTop: 2,
+            lineHeight: 1.25,
+          }}>
             {currentIdx} {currentIdx === 1 ? 'degrau' : 'degraus'} ·{' '}
             <span style={{ color: stepzTokens.accent, fontWeight: 600 }}>
               Nível {currentLevel} · {LEVEL_META[currentLevel - 1]?.name || '—'}
             </span>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: layoutCompact ? 6 : 8,
+          flexWrap: layoutCompact ? 'wrap' : 'nowrap',
+          justifyContent: layoutCompact ? 'flex-end' : 'flex-start',
+          flex: layoutCompact ? '1 1 auto' : 'none',
+          marginLeft: layoutCompact ? 'auto' : undefined,
+        }}>
           <div style={{ fontSize: 11, color: stepzTokens.textFaint, marginRight: 6, fontFamily: stepzTokens.fontMono }}>
             {lod === 'far' ? 'visão geral' : lod === 'mid' ? 'níveis' : 'detalhes'}
           </div>
@@ -698,7 +726,7 @@ function LiveStairs({
           cursor: dragging.current ? 'grabbing' : 'grab', touchAction: 'none',
           background: `radial-gradient(ellipse at 70% 30%, oklch(0.28 0.075 252 / 0.22), transparent 62%)`,
         }}>
-        <svg width={size.w} height={size.h - 60} style={{ display: 'block', userSelect: 'none' }}>
+        <svg width={size.w} height={Math.max(0, size.h - 60)} style={{ display: 'block', userSelect: 'none' }}>
           <defs>
             <linearGradient id="stepzStairGold" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0%" stopColor="#f7ebb8" />

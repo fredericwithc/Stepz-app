@@ -3,14 +3,16 @@
 <head>
 <meta charset="utf-8">
 <title>Stepz</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; }
+  html { overflow-x: clip; }
   html, body { margin: 0; padding: 0; background: #0a0a0b; color: #f2efe9; font-family: 'Inter', system-ui, sans-serif; }
-  button { font-family: inherit; }
+  #root { min-width: 0; overflow-x: clip; }
+  button { font-family: inherit; touch-action: manipulation; }
   input, select { font-family: inherit; }
   @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   @keyframes pop { 0% { transform: scale(.8); opacity: 0; } 60% { transform: scale(1.05); opacity: 1; } 100% { transform: scale(1); } }
