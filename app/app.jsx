@@ -704,16 +704,31 @@ function App() {
     const tags = isLegacy ? [] : input.tags;
     const description = isLegacy ? '' : input.description;
     const project = isLegacy ? DEFAULT_PROJECT : ((input.project || '').trim() || DEFAULT_PROJECT);
-    setState(s => ({
-      ...s,
-      tasks: [...s.tasks, {
-        id: cryptoId(), title, category, done: false, dueDate, status, priority, tags, description, project,
-      }],
-    }));
+    setState(s => {
+      const prevOrder = Array.isArray(s.projectOrder) ? s.projectOrder : [];
+      const nextProjectOrder = prevOrder.includes(project) ? prevOrder : [...prevOrder, project];
+      return {
+        ...s,
+        tasks: [...s.tasks, {
+          id: cryptoId(), title, category, done: false, dueDate, status, priority, tags, description, project,
+        }],
+        projectOrder: nextProjectOrder,
+      };
+    });
   };
 
   const deleteTask = (taskId) => {
-    setState(s => ({ ...s, tasks: s.tasks.filter(x => x.id !== taskId) }));
+    setState(s => {
+      const removed = s.tasks.find(x => x.id === taskId);
+      const tasks = s.tasks.filter(x => x.id !== taskId);
+      let projectOrder = Array.isArray(s.projectOrder) ? s.projectOrder : [];
+      if (removed) {
+        const proj = ((removed.project || '').trim() || DEFAULT_PROJECT);
+        const stillUsed = tasks.some(t => ((t.project || '').trim() || DEFAULT_PROJECT) === proj);
+        if (!stillUsed) projectOrder = projectOrder.filter(p => p !== proj);
+      }
+      return { ...s, tasks, projectOrder };
+    });
   };
 
   const updateTask = (taskId, patch) => {
@@ -784,11 +799,90 @@ function App() {
 
       if (celebration) queueMicrotask(() => setCelebrate(celebration));
 
+      const nextTasks = s.tasks.map(x => x.id === taskId ? merged : x);
+      const prevProject = ((t.project || '').trim() || DEFAULT_PROJECT);
+      const nextProject = ((merged.project || '').trim() || DEFAULT_PROJECT);
+      let projectOrder = Array.isArray(s.projectOrder) ? s.projectOrder : [];
+      if (prevProject !== nextProject) {
+        if (!projectOrder.includes(nextProject)) projectOrder = [...projectOrder, nextProject];
+        const stillUsed = nextTasks.some(x => ((x.project || '').trim() || DEFAULT_PROJECT) === prevProject);
+        if (!stillUsed) projectOrder = projectOrder.filter(p => p !== prevProject);
+      }
+
       return {
         ...s,
-        tasks: s.tasks.map(x => x.id === taskId ? merged : x),
+        tasks: nextTasks,
         steps: nextSteps,
+        projectOrder,
       };
+    });
+  };
+
+  /**
+   * Reordena tasks dentro de um projeto e dentro do seu grupo (open ou done).
+   * fromVisibleIdx/toVisibleIdx são índices contados apenas entre os items do mesmo grupo
+   * (não-feitas formam um grupo, feitas outro). Traduzimos para índices reais no array global
+   * `state.tasks` e fazemos um splice imutável.
+   */
+  const moveTask = (taskId, projectName, fromVisibleIdx, toVisibleIdx, group) => {
+    if (fromVisibleIdx === toVisibleIdx) return;
+    setState(s => {
+      const tasks = s.tasks;
+      const proj = ((projectName || '').trim() || DEFAULT_PROJECT);
+      const realIndicesInGroup = [];
+      tasks.forEach((t, i) => {
+        const tp = ((t.project || '').trim() || DEFAULT_PROJECT);
+        if (tp !== proj) return;
+        const isOpen = !t.done;
+        if (group === 'open' && isOpen) realIndicesInGroup.push(i);
+        else if (group === 'done' && !isOpen) realIndicesInGroup.push(i);
+      });
+      if (fromVisibleIdx < 0 || fromVisibleIdx >= realIndicesInGroup.length) return s;
+      const fromReal = realIndicesInGroup[fromVisibleIdx];
+      const sourceTask = tasks[fromReal];
+      if (!sourceTask || sourceTask.id !== taskId) return s;
+      /* toVisibleIdx pode ser igual a length (drop após o último item). */
+      const clampedTo = Math.max(0, Math.min(toVisibleIdx, realIndicesInGroup.length));
+      let toReal;
+      if (clampedTo >= realIndicesInGroup.length) {
+        /* posição "depois do último": índice real é uma a seguir ao último do grupo. */
+        toReal = realIndicesInGroup[realIndicesInGroup.length - 1] + 1;
+      } else {
+        toReal = realIndicesInGroup[clampedTo];
+      }
+      const next = tasks.slice();
+      const [moved] = next.splice(fromReal, 1);
+      const adjustedTo = toReal > fromReal ? toReal - 1 : toReal;
+      next.splice(adjustedTo, 0, moved);
+      return { ...s, tasks: next };
+    });
+  };
+
+  /** Reordena a lista de projetos (move o item from→to em state.projectOrder). */
+  const moveProject = (fromIdx, toIdx) => {
+    if (fromIdx === toIdx) return;
+    setState(s => {
+      const order = Array.isArray(s.projectOrder) ? s.projectOrder.slice() : [];
+      if (fromIdx < 0 || fromIdx >= order.length) return s;
+      const clampedTo = Math.max(0, Math.min(toIdx, order.length));
+      const [moved] = order.splice(fromIdx, 1);
+      const adjustedTo = clampedTo > fromIdx ? clampedTo - 1 : clampedTo;
+      order.splice(adjustedTo, 0, moved);
+      return { ...s, projectOrder: order };
+    });
+  };
+
+  /** Reordena post-its no array global de post-its. */
+  const movePostit = (fromIdx, toIdx) => {
+    if (fromIdx === toIdx) return;
+    setState(s => {
+      const arr = Array.isArray(s.postits) ? s.postits.slice() : [];
+      if (fromIdx < 0 || fromIdx >= arr.length) return s;
+      const clampedTo = Math.max(0, Math.min(toIdx, arr.length));
+      const [moved] = arr.splice(fromIdx, 1);
+      const adjustedTo = clampedTo > fromIdx ? clampedTo - 1 : clampedTo;
+      arr.splice(adjustedTo, 0, moved);
+      return { ...s, postits: arr };
     });
   };
 
@@ -796,12 +890,25 @@ function App() {
     const from = (fromProject || '').trim();
     const to = (toProject || '').trim();
     if (!from || !to || from === to) return;
-    setState(s => ({
-      ...s,
-      tasks: s.tasks.map(t => (((t.project || '').trim() || DEFAULT_PROJECT) === from
-        ? { ...t, project: to }
-        : t)),
-    }));
+    setState(s => {
+      const prevOrder = Array.isArray(s.projectOrder) ? s.projectOrder : [];
+      let nextOrder;
+      if (prevOrder.includes(from)) {
+        nextOrder = prevOrder.map(p => (p === from ? to : p));
+        nextOrder = nextOrder.filter((p, i) => nextOrder.indexOf(p) === i);
+      } else if (!prevOrder.includes(to)) {
+        nextOrder = [...prevOrder, to];
+      } else {
+        nextOrder = prevOrder;
+      }
+      return {
+        ...s,
+        tasks: s.tasks.map(t => (((t.project || '').trim() || DEFAULT_PROJECT) === from
+          ? { ...t, project: to }
+          : t)),
+        projectOrder: nextOrder,
+      };
+    });
   };
 
   const toggleHabitToday = (habitId) => {
@@ -1145,7 +1252,9 @@ function App() {
             onStepClick={(i) => setStepDetail(i)}
             taskTagColors={taskTagColors}
             allKnownTaskTags={allKnownTaskTags}
-            onSetTaskTagColor={setTaskTagColor} />
+            onSetTaskTagColor={setTaskTagColor}
+            onMoveTask={moveTask}
+            onMoveProject={moveProject} />
         )}
         {tab === 'habits' && (
           <HabitsView
@@ -1167,7 +1276,7 @@ function App() {
           />
         )}
         {tab === 'postits' && (
-          <PostitsView state={state} setState={setState} />
+          <PostitsView state={state} setState={setState} onMovePostit={movePostit} />
         )}
         {tab === 'journey' && (
           <JourneyView
@@ -1531,7 +1640,7 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
   const todayTasks = state.tasks
     .filter(t => t.dueDate === todayStr() || !t.done)
     .sort((a, b) => Number(a.done) - Number(b.done));
-  const todayByProject = groupTasksByProject(todayTasks);
+  const todayByProject = groupTasksByProject(todayTasks, state.projectOrder);
   return (
     <>
     <div style={{
@@ -1627,7 +1736,7 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
   );
 }
 
-function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCreateModal, onEditTask, onRenameProject, onUpdateTask, onStepClick, taskTagColors, allKnownTaskTags, onSetTaskTagColor }) {
+function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCreateModal, onEditTask, onRenameProject, onUpdateTask, onStepClick, taskTagColors, allKnownTaskTags, onSetTaskTagColor, onMoveTask, onMoveProject }) {
   const [tagEditor, setTagEditor] = useState(null);
   const [priorityEditor, setPriorityEditor] = useState(null);
   const [statusEditor, setStatusEditor] = useState(null);
@@ -1635,7 +1744,9 @@ function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCre
   const priorityPopoverTask = priorityEditor ? state.tasks.find((x) => x.id === priorityEditor.taskId) : null;
   const statusPopoverTask = statusEditor ? state.tasks.find((x) => x.id === statusEditor.taskId) : null;
   const openCount = state.tasks.filter(t => !t.done).length;
-  const allByProject = groupTasksByProject(state.tasks);
+  const allByProject = groupTasksByProject(state.tasks, state.projectOrder);
+
+  const projectDrag = useDraggableList(onMoveProject);
 
   const taskCompletionArchive = useMemo(() => (
     state.steps
@@ -1659,22 +1770,57 @@ function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCre
         {state.tasks.length === 0 ? (
           <Empty msg="Nenhuma task ainda. Crie uma acima." />
         ) : (
-          allByProject.map(([project, tasks]) => (
-            <TaskProjectSection key={`proj-${project}`} project={project} count={tasks.length} onRenameProject={onRenameProject} showTaskTableHeader>
-              {tasks.map(t => (
-                <TaskItem key={t.id} task={t}
-                  taskTagColors={taskTagColors}
-                  onTagsPopoverOpen={(anchor) => { setPriorityEditor(null); setStatusEditor(null); setTagEditor({ taskId: t.id, ...anchor }); }}
-                  onPriorityPopoverOpen={(anchor) => { setTagEditor(null); setStatusEditor(null); setPriorityEditor({ taskId: t.id, ...anchor }); }}
-                  onStatusPopoverOpen={(anchor) => { setTagEditor(null); setPriorityEditor(null); setStatusEditor({ taskId: t.id, ...anchor }); }}
-                  onComplete={() => onComplete(t.id)}
-                  onUncomplete={t.done ? () => onUncomplete(t.id) : undefined}
-                  onUpdateTask={(patch) => onUpdateTask(t.id, patch)}
-                  onEditTask={() => onEditTask(t)}
-                  onDelete={() => onDelete(t.id)} />
-              ))}
-            </TaskProjectSection>
-          ))
+          allByProject.map(([project, tasks], projectIdx) => {
+            const openTasks = tasks.filter((t) => !t.done);
+            const doneTasks = tasks.filter((t) => t.done);
+            const isThisProjectDragging = !!(projectDrag.drag && projectDrag.drag.fromIdx === projectIdx);
+            const dropBefore = !!(projectDrag.drag && projectDrag.drag.dropIdx === projectIdx && projectDrag.drag.fromIdx !== projectIdx && projectDrag.drag.fromIdx !== projectIdx - 1);
+            const dropAfter = projectIdx === allByProject.length - 1 && !!(projectDrag.drag && projectDrag.drag.dropIdx === allByProject.length && projectDrag.drag.fromIdx !== allByProject.length - 1);
+            const renderRow = (t, idx, extras) => (
+              <TaskItem key={t.id} task={t}
+                setItemRef={extras.setItemRef}
+                dragHandleProps={extras.dragHandleProps}
+                isDragging={extras.isDragging}
+                taskTagColors={taskTagColors}
+                onTagsPopoverOpen={(anchor) => { setPriorityEditor(null); setStatusEditor(null); setTagEditor({ taskId: t.id, ...anchor }); }}
+                onPriorityPopoverOpen={(anchor) => { setTagEditor(null); setStatusEditor(null); setPriorityEditor({ taskId: t.id, ...anchor }); }}
+                onStatusPopoverOpen={(anchor) => { setTagEditor(null); setPriorityEditor(null); setStatusEditor({ taskId: t.id, ...anchor }); }}
+                onComplete={() => onComplete(t.id)}
+                onUncomplete={t.done ? () => onUncomplete(t.id) : undefined}
+                onUpdateTask={(patch) => onUpdateTask(t.id, patch)}
+                onEditTask={() => onEditTask(t)}
+                onDelete={() => onDelete(t.id)} />
+            );
+            return (
+              <TaskProjectSection
+                key={`proj-${project}`}
+                project={project}
+                count={tasks.length}
+                onRenameProject={onRenameProject}
+                showTaskTableHeader
+                projectDragHandleProps={onMoveProject ? projectDrag.getHandleProps(projectIdx) : undefined}
+                projectItemRef={onMoveProject ? projectDrag.setItemEl(projectIdx) : undefined}
+                isProjectDragging={isThisProjectDragging}
+                dropBefore={dropBefore}
+                dropAfter={dropAfter}
+              >
+                <DraggableTaskGroup
+                  tasks={openTasks}
+                  project={project}
+                  group="open"
+                  onMoveTask={onMoveTask}
+                  renderItem={renderRow}
+                />
+                <DraggableTaskGroup
+                  tasks={doneTasks}
+                  project={project}
+                  group="done"
+                  onMoveTask={onMoveTask}
+                  renderItem={renderRow}
+                />
+              </TaskProjectSection>
+            );
+          })
         )}
       </Panel2>
 
@@ -1749,7 +1895,271 @@ function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCre
   );
 }
 
-function groupTasksByProject(tasks) {
+/* =============================================================================
+ * Drag-and-drop: helpers genéricos (sem libs externas).
+ * Usa Pointer Events com setPointerCapture — funciona em rato e touch.
+ * - useDraggableList: lista vertical (tasks dentro de um projeto, lista de projetos).
+ * - useMasonryDrag:   grelha de post-its em colunas (drop pelo cartão mais próximo).
+ * - DragHandle/DropIndicator: componentes apresentacionais partilhados.
+ * ============================================================================= */
+
+function DragHandle({ onPointerDown, onPointerMove, onPointerUp, onPointerCancel, isMobile, isActive, label = 'Arrastar para reordenar', dim = false }) {
+  /* opacidade: em mobile sempre visível; no desktop um pouco mais ténue para não competir
+     com a leitura, e em hover do parent (gerido pelo parent via state) sobe. */
+  const baseOpacity = isActive ? 1 : (isMobile ? 0.75 : (dim ? 0.15 : 0.6));
+  return (
+    <button
+      type="button"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      aria-label={label}
+      title={label}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        width: 28,
+        height: 28,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: isActive ? 'grabbing' : 'grab',
+        color: stepzTokens.textFaint,
+        touchAction: 'none',
+        opacity: baseOpacity,
+        transition: 'opacity 120ms ease',
+        flexShrink: 0,
+      }}
+    >
+      <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true" focusable="false">
+        <circle cx="2" cy="2" r="1.2" fill="currentColor" />
+        <circle cx="8" cy="2" r="1.2" fill="currentColor" />
+        <circle cx="2" cy="7" r="1.2" fill="currentColor" />
+        <circle cx="8" cy="7" r="1.2" fill="currentColor" />
+        <circle cx="2" cy="12" r="1.2" fill="currentColor" />
+        <circle cx="8" cy="12" r="1.2" fill="currentColor" />
+      </svg>
+    </button>
+  );
+}
+
+function DropIndicator({ active, inset = 0 }) {
+  if (!active) return null;
+  return (
+    <div aria-hidden="true" style={{
+      height: 2,
+      marginLeft: inset,
+      background: stepzTokens.accent,
+      borderRadius: 2,
+      boxShadow: `0 0 0 2px ${stepzTokens.accent}33`,
+      pointerEvents: 'none',
+    }} />
+  );
+}
+
+/**
+ * Wrapper de grupo de tasks arrastáveis (open ou done dentro de um projeto).
+ * `renderItem(task, idx, { dragHandleProps, setItemRef, isDragging })` produz o JSX da row.
+ */
+function DraggableTaskGroup({ tasks, project, group, onMoveTask, renderItem }) {
+  const { drag, setItemEl, getHandleProps } = useDraggableList((from, to) => {
+    if (typeof onMoveTask !== 'function') return;
+    const t = tasks[from];
+    if (!t) return;
+    onMoveTask(t.id, project, from, to, group);
+  });
+  return (
+    <>
+      {tasks.map((t, idx) => {
+        const isDragging = !!(drag && drag.fromIdx === idx);
+        /* Mostra o indicador "antes do idx" se: dropIdx === idx, e não é o próprio item nem o seguinte ao próprio. */
+        const showBefore = !!(drag && drag.dropIdx === idx && drag.fromIdx !== idx && drag.fromIdx !== idx - 1);
+        return (
+          <React.Fragment key={t.id}>
+            <DropIndicator active={showBefore} inset={24} />
+            {renderItem(t, idx, {
+              dragHandleProps: getHandleProps(idx),
+              setItemRef: setItemEl(idx),
+              isDragging,
+            })}
+          </React.Fragment>
+        );
+      })}
+      <DropIndicator
+        active={!!(drag && drag.dropIdx === tasks.length && drag.fromIdx !== tasks.length - 1)}
+        inset={24}
+      />
+    </>
+  );
+}
+
+/**
+ * Estado/handlers para reordenar uma lista vertical. O componente lista regista cada item
+ * via `setItemEl(idx)` (ref callback). No pointerdown chamamos `setPointerCapture` no handle
+ * para receber os pointermove/up mesmo fora do botão.
+ *
+ * `onMove(fromIdx, toIdx)` é chamado no pointerup (toIdx é o índice "alvo" — o helper splice
+ * imutável em moveTask/moveProject já lida com from<to vs from>to).
+ */
+function useDraggableList(onMove) {
+  const itemElsRef = useRef([]);
+  const [drag, setDrag] = useState(null); // { fromIdx, dropIdx }
+  const pointerIdRef = useRef(null);
+  const dragRef = useRef(null);
+
+  useEffect(() => { dragRef.current = drag; }, [drag]);
+
+  const setItemEl = useCallback((idx) => (el) => {
+    itemElsRef.current[idx] = el || null;
+  }, []);
+
+  const computeDropIdx = useCallback((clientY) => {
+    const els = itemElsRef.current;
+    let count = 0;
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      const midY = r.top + r.height / 2;
+      if (clientY < midY) return count;
+      count += 1;
+    }
+    return count;
+  }, []);
+
+  const onPointerMove = useCallback((e) => {
+    const cur = dragRef.current;
+    if (!cur) return;
+    if (pointerIdRef.current != null && e.pointerId !== pointerIdRef.current) return;
+    const dropIdx = computeDropIdx(e.clientY);
+    if (dropIdx !== cur.dropIdx) setDrag({ ...cur, dropIdx });
+  }, [computeDropIdx]);
+
+  const finishDrag = useCallback((commit) => {
+    const cur = dragRef.current;
+    if (!cur) return;
+    setDrag(null);
+    pointerIdRef.current = null;
+    if (commit && typeof onMove === 'function' && cur.fromIdx !== cur.dropIdx) {
+      onMove(cur.fromIdx, cur.dropIdx);
+    }
+  }, [onMove]);
+
+  const onPointerUp = useCallback((e) => {
+    if (pointerIdRef.current != null && e && e.pointerId !== pointerIdRef.current) return;
+    finishDrag(true);
+  }, [finishDrag]);
+
+  const onPointerCancel = useCallback(() => finishDrag(false), [finishDrag]);
+
+  const getHandleProps = useCallback((idx) => ({
+    onPointerDown: (e) => {
+      if (e.button != null && e.button !== 0) return;
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+      pointerIdRef.current = e.pointerId;
+      setDrag({ fromIdx: idx, dropIdx: idx });
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+  }), [onPointerMove, onPointerUp, onPointerCancel]);
+
+  return { drag, setItemEl, getHandleProps };
+}
+
+/**
+ * Drag para grelhas tipo masonry (post-its). Usa distância euclidiana ao centro de cada
+ * cartão para encontrar o alvo; decide antes/depois pela posição vertical no cartão alvo.
+ * `itemKeys` é a lista de chaves visíveis (ordem do subset filtrado); o componente passa
+ * `fromIdx`/`toIdx` que se referem a essas chaves — é responsabilidade do caller traduzi-las
+ * para índices reais do array global antes de chamar a mutation.
+ */
+function useMasonryDrag(onMove) {
+  const itemElsRef = useRef([]);
+  const [drag, setDrag] = useState(null);
+  const pointerIdRef = useRef(null);
+  const dragRef = useRef(null);
+
+  useEffect(() => { dragRef.current = drag; }, [drag]);
+
+  const setItemEl = useCallback((idx) => (el) => {
+    itemElsRef.current[idx] = el || null;
+  }, []);
+
+  const computeDropIdx = useCallback((clientX, clientY) => {
+    const els = itemElsRef.current;
+    let best = { idx: -1, dist: Infinity, before: true };
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const dx = clientX - cx;
+      const dy = clientY - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < best.dist) {
+        best = { idx: i, dist: d2, before: clientY < cy };
+      }
+    }
+    if (best.idx < 0) return 0;
+    return best.before ? best.idx : best.idx + 1;
+  }, []);
+
+  const onPointerMove = useCallback((e) => {
+    const cur = dragRef.current;
+    if (!cur) return;
+    if (pointerIdRef.current != null && e.pointerId !== pointerIdRef.current) return;
+    const dropIdx = computeDropIdx(e.clientX, e.clientY);
+    if (dropIdx !== cur.dropIdx) setDrag({ ...cur, dropIdx });
+  }, [computeDropIdx]);
+
+  const finishDrag = useCallback((commit) => {
+    const cur = dragRef.current;
+    if (!cur) return;
+    setDrag(null);
+    pointerIdRef.current = null;
+    if (commit && typeof onMove === 'function' && cur.fromIdx !== cur.dropIdx) {
+      onMove(cur.fromIdx, cur.dropIdx);
+    }
+  }, [onMove]);
+
+  const onPointerUp = useCallback((e) => {
+    if (pointerIdRef.current != null && e && e.pointerId !== pointerIdRef.current) return;
+    finishDrag(true);
+  }, [finishDrag]);
+
+  const onPointerCancel = useCallback(() => finishDrag(false), [finishDrag]);
+
+  const getHandleProps = useCallback((idx) => ({
+    onPointerDown: (e) => {
+      if (e.button != null && e.button !== 0) return;
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+      pointerIdRef.current = e.pointerId;
+      setDrag({ fromIdx: idx, dropIdx: idx });
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+  }), [onPointerMove, onPointerUp, onPointerCancel]);
+
+  return { drag, setItemEl, getHandleProps };
+}
+
+/**
+ * Agrupa tasks por projeto. Ordem dos projetos vem de `projectOrder` (drag manual);
+ * projetos não listados ali vão para o fim na ordem em que aparecem nas tasks (compat).
+ * Dentro de cada projeto, sort estável: primeiro as não-concluídas, depois as concluídas —
+ * preservando a ordem original do array em ambos os grupos (essa ordem é o que o utilizador
+ * controla via drag).
+ */
+function groupTasksByProject(tasks, projectOrder) {
   const grouped = {};
   tasks.forEach((task) => {
     const project = (task.project || '').trim() || DEFAULT_PROJECT;
@@ -1757,9 +2167,24 @@ function groupTasksByProject(tasks) {
     grouped[project].push(task);
   });
   Object.values(grouped).forEach((projectTasks) => {
-    projectTasks.sort((a, b) => Number(a.done) - Number(b.done));
+    const open = projectTasks.filter((t) => !t.done);
+    const done = projectTasks.filter((t) => t.done);
+    projectTasks.length = 0;
+    projectTasks.push(...open, ...done);
   });
-  return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'pt-BR'));
+  const ordered = [];
+  const seen = new Set();
+  const orderList = Array.isArray(projectOrder) ? projectOrder : [];
+  for (const p of orderList) {
+    if (grouped[p]) {
+      ordered.push([p, grouped[p]]);
+      seen.add(p);
+    }
+  }
+  for (const [p, list] of Object.entries(grouped)) {
+    if (!seen.has(p)) ordered.push([p, list]);
+  }
+  return ordered;
 }
 
 function habitCategoryMeta(habit, categories) {
@@ -3954,9 +4379,10 @@ function TaskTagsTriggerCell({ tagsList, taskTagColors, taskId, onTagsPopoverOpe
   );
 }
 
-function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEditTask, taskTagColors = {}, onTagsPopoverOpen, onPriorityPopoverOpen, onStatusPopoverOpen }) {
+function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEditTask, taskTagColors = {}, onTagsPopoverOpen, onPriorityPopoverOpen, onStatusPopoverOpen, dragHandleProps, isDragging, setItemRef }) {
   const gridCtx = useContext(TaskGridColumnsContext);
   const { isMobile } = useStepzViewport();
+  const [hovered, setHovered] = useState(false);
   const gridTemplateColumns = gridCtx?.gridTemplateColumns ?? buildTaskGridTemplate(TASK_GRID_WIDTH_DEFAULTS);
   const priority = TASK_PRIORITIES.find(p => p.id === task.priority) || TASK_PRIORITIES[1];
   const status = TASK_STATUS.find(s => s.id === normalizeTaskStatus(task.status, task.done)) || TASK_STATUS[0];
@@ -4000,11 +4426,40 @@ function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEd
     gap: isMobile ? '0 8px' : '0 10px',
     alignItems: 'center',
     padding: isMobile ? '6px 8px' : '7px 10px',
-    borderBottom: `1px solid ${stepzTokens.border}`,
+    borderBottom: dragHandleProps ? 'none' : `1px solid ${stepzTokens.border}`,
+    flex: 1,
+    minWidth: 0,
   };
 
+  const wrapperStyle = dragHandleProps ? {
+    display: 'flex',
+    alignItems: 'stretch',
+    borderBottom: `1px solid ${stepzTokens.border}`,
+    opacity: isDragging ? 0.55 : 1,
+    background: isDragging ? 'rgba(255,255,255,0.04)' : 'transparent',
+    transform: isDragging ? 'scale(0.995)' : 'none',
+    transformOrigin: 'left center',
+    transition: 'opacity 120ms ease, background 120ms ease, transform 120ms ease',
+  } : null;
+
   return (
-    <div>
+    <div
+      ref={setItemRef || undefined}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={wrapperStyle || undefined}
+    >
+      {dragHandleProps ? (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          paddingLeft: isMobile ? 2 : 4,
+          paddingRight: isMobile ? 2 : 0,
+          flexShrink: 0,
+        }}>
+          <DragHandle {...dragHandleProps} isMobile={isMobile} dim={!hovered && !isDragging} isActive={isDragging} />
+        </div>
+      ) : null}
       <div style={rowStyle}>
         <button
           type="button"
@@ -4215,10 +4670,11 @@ function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEd
   );
 }
 
-function TaskProjectSection({ project, count, children, onRenameProject, showTaskTableHeader }) {
+function TaskProjectSection({ project, count, children, onRenameProject, showTaskTableHeader, projectDragHandleProps, projectItemRef, isProjectDragging, dropBefore, dropAfter }) {
   const [open, setOpen] = useState(true);
   const [editing, setEditing] = useState(false);
   const [newName, setNewName] = useState(project);
+  const [headerHover, setHeaderHover] = useState(false);
   const { isMobile } = useStepzViewport();
   useEffect(() => {
     if (!editing) setNewName(project);
@@ -4228,17 +4684,27 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
     setEditing(false);
   };
   return (
-    <div style={{
-      marginBottom: isMobile ? 10 : 12,
-      background: stepzTokens.panel2,
-      border: `1px solid ${stepzTokens.border}`,
-      borderRadius: 10,
-      padding: isMobile ? '8px 10px 0' : '10px 12px 0',
-    }}>
+    <>
+    <DropIndicator active={!!dropBefore} inset={isMobile ? 0 : 4} />
+    <div
+      ref={projectItemRef}
+      onMouseEnter={() => setHeaderHover(true)}
+      onMouseLeave={() => setHeaderHover(false)}
+      style={{
+        marginBottom: isMobile ? 10 : 12,
+        background: stepzTokens.panel2,
+        border: `1px solid ${stepzTokens.border}`,
+        borderRadius: 10,
+        padding: isMobile ? '8px 10px 0' : '10px 12px 0',
+        opacity: isProjectDragging ? 0.55 : 1,
+        transform: isProjectDragging ? 'scale(0.998)' : 'none',
+        transformOrigin: 'left center',
+        transition: 'opacity 120ms ease, transform 120ms ease',
+      }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: isMobile ? 8 : 10,
+        gap: isMobile ? 6 : 8,
         flexWrap: 'nowrap',
         background: 'rgba(255,255,255,0.03)',
         border: `1px solid ${stepzTokens.border}`,
@@ -4246,6 +4712,9 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
         padding: isMobile ? '6px 10px' : '8px 12px',
         marginBottom: open ? 8 : 0,
       }}>
+        {projectDragHandleProps ? (
+          <DragHandle {...projectDragHandleProps} isMobile={isMobile} dim={!headerHover && !isProjectDragging} isActive={isProjectDragging} label="Arrastar para reordenar projeto" />
+        ) : null}
         <button
           type="button"
           onClick={() => setOpen(v => !v)}
@@ -4370,6 +4839,8 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
         </div>
       )}
     </div>
+    <DropIndicator active={!!dropAfter} inset={isMobile ? 0 : 4} />
+    </>
   );
 }
 

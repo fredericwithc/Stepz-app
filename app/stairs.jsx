@@ -89,6 +89,19 @@ function loadState(userKey) {
         .filter(Boolean)
         .map((st) => (st.id ? st : { ...st, id: cryptoId() }));
     }
+    /* Estados antigos não tinham `projectOrder`. Derivamos da ordem em que os projetos aparecem
+       nas tasks, para que o utilizador não veja a lista a saltar na primeira execução. */
+    if (!Array.isArray(merged.projectOrder)) merged.projectOrder = [];
+    if (Array.isArray(merged.tasks) && merged.tasks.length > 0) {
+      const known = new Set(merged.projectOrder);
+      for (const t of merged.tasks) {
+        const p = String((t && t.project) || '').trim();
+        if (p && !known.has(p)) {
+          merged.projectOrder.push(p);
+          known.add(p);
+        }
+      }
+    }
     return merged;
   } catch (e) { return defaultState(); }
 }
@@ -162,6 +175,8 @@ function defaultState() {
     /** Metas de médio/longo prazo: marcos e progresso derivado. */
     goals: [],
     postits: [],
+    /** Ordem manual dos projetos (nomes únicos). Drives groupTasksByProject. */
+    projectOrder: [],
   };
 }
 function cryptoId() {

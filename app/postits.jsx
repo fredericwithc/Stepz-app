@@ -152,7 +152,7 @@ function defaultPostits() {
   ];
 }
 
-function PostitsView({ state, setState }) {
+function PostitsView({ state, setState, onMovePostit }) {
   const postits = state.postits || [];
   const narrow = useStepzPostitsNarrow();
   const [filter, setFilter] = React.useState('all');
@@ -161,6 +161,32 @@ function PostitsView({ state, setState }) {
   const updatePostits = (updater) => {
     setState(s => ({ ...s, postits: updater(s.postits || []) }));
   };
+
+  /* `filtered` (definido mais abaixo) é o subset visível conforme o filtro de categoria.
+     O hook de drag opera nos índices visíveis; aqui traduzimos para índices reais no array global. */
+  const moveVisible = React.useCallback((fromVis, toVis) => {
+    if (typeof onMovePostit !== 'function') return;
+    const all = state.postits || [];
+    const visList = filter === 'all' ? all : all.filter(p => p.tag === filter);
+    const src = visList[fromVis];
+    if (!src) return;
+    const realFrom = all.findIndex(p => p.id === src.id);
+    let realTo;
+    if (toVis >= visList.length) {
+      /* Drop após o último visível: vai para a posição depois do último real desse subset.
+         Se o filtro é "all", isto é simplesmente o fim do array. */
+      const lastVis = visList[visList.length - 1];
+      const lastRealIdx = lastVis ? all.findIndex(p => p.id === lastVis.id) : -1;
+      realTo = lastRealIdx >= 0 ? lastRealIdx + 1 : all.length;
+    } else {
+      const target = visList[toVis];
+      realTo = target ? all.findIndex(p => p.id === target.id) : all.length;
+    }
+    if (realFrom === realTo) return;
+    onMovePostit(realFrom, realTo);
+  }, [onMovePostit, state.postits, filter]);
+
+  const masonryDrag = useMasonryDrag(moveVisible);
 
   const addPostit = () => {
     const np = {
@@ -329,17 +355,24 @@ function PostitsView({ state, setState }) {
             columnCount: narrow ? 1 : 3,
             columnGap: 16,
           }} className="postit-masonry">
-            {filtered.map(p => (
-              <PostitCard
-                key={p.id}
-                postit={p}
-                isEditing={editing === p.id}
-                onEdit={() => setEditing(p.id)}
-                onBlur={() => setEditing(null)}
-                onChange={patch => updatePostit(p.id, patch)}
-                onDelete={() => deletePostit(p.id)}
-              />
-            ))}
+            {filtered.map((p, idx) => {
+              const isDragging = !!(masonryDrag.drag && masonryDrag.drag.fromIdx === idx);
+              return (
+                <PostitCard
+                  key={p.id}
+                  postit={p}
+                  isEditing={editing === p.id}
+                  onEdit={() => setEditing(p.id)}
+                  onBlur={() => setEditing(null)}
+                  onChange={patch => updatePostit(p.id, patch)}
+                  onDelete={() => deletePostit(p.id)}
+                  setItemRef={onMovePostit ? masonryDrag.setItemEl(idx) : undefined}
+                  dragHandleProps={onMovePostit ? masonryDrag.getHandleProps(idx) : undefined}
+                  isDragging={isDragging}
+                  narrow={narrow}
+                />
+              );
+            })}
           </div>
         )}
       </div>
@@ -527,10 +560,11 @@ function SidebarItem({ active, onClick, icon, label, count, chip }) {
   );
 }
 
-function PostitCard({ postit, isEditing, onEdit, onBlur, onChange, onDelete }) {
+function PostitCard({ postit, isEditing, onEdit, onBlur, onChange, onDelete, setItemRef, dragHandleProps, isDragging, narrow }) {
   const color = POSTIT_COLORS.find(c => c.id === postit.color) || POSTIT_COLORS[0];
   const tag = POSTIT_TAGS.find(t => t.id === postit.tag);
   const [showColors, setShowColors] = React.useState(false);
+  const [cardHover, setCardHover] = React.useState(false);
 
   const updateItem = (itemId, patch) => {
     onChange({ items: postit.items.map(it => it.id === itemId ? { ...it, ...patch } : it) });
@@ -543,27 +577,69 @@ function PostitCard({ postit, isEditing, onEdit, onBlur, onChange, onDelete }) {
   };
 
   return (
-    <div style={{
-      breakInside: 'avoid',
-      marginBottom: 16,
-      background: color.bg,
-      border: `1px solid ${color.border}`,
-      borderRadius: 10,
-      padding: '12px 14px 14px',
-      position: 'relative',
-      transition: 'transform .12s, box-shadow .12s',
-    }}
+    <div
+      ref={setItemRef || undefined}
+      style={{
+        breakInside: 'avoid',
+        marginBottom: 16,
+        background: color.bg,
+        border: `1px solid ${color.border}`,
+        borderRadius: 10,
+        padding: '12px 14px 14px',
+        position: 'relative',
+        transition: 'transform .12s, box-shadow .12s, opacity .12s',
+        opacity: isDragging ? 0.55 : 1,
+        transform: isDragging ? 'scale(0.985)' : 'none',
+      }}
       onMouseEnter={(e) => {
+        setCardHover(true);
         e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.3)';
-        e.currentTarget.querySelector('[data-controls]').style.opacity = 1;
+        const ctrl = e.currentTarget.querySelector('[data-controls]');
+        if (ctrl) ctrl.style.opacity = 1;
       }}
       onMouseLeave={(e) => {
+        setCardHover(false);
         e.currentTarget.style.boxShadow = 'none';
-        e.currentTarget.querySelector('[data-controls]').style.opacity = 0;
+        const ctrl = e.currentTarget.querySelector('[data-controls]');
+        if (ctrl) ctrl.style.opacity = 0;
       }}
     >
-      {/* Header: tag icon + title */}
+      {/* Header: drag handle (opcional) + tag icon + title */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        {dragHandleProps ? (
+          <button
+            type="button"
+            {...dragHandleProps}
+            aria-label="Arrastar para reordenar"
+            title="Arrastar para reordenar"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              width: 28,
+              height: 28,
+              marginLeft: -8,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: isDragging ? 'grabbing' : 'grab',
+              color: color.accent,
+              touchAction: 'none',
+              opacity: isDragging ? 1 : (narrow ? 0.65 : (cardHover ? 0.7 : 0.2)),
+              transition: 'opacity 120ms ease',
+              flexShrink: 0,
+            }}
+          >
+            <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true" focusable="false">
+              <circle cx="2" cy="2" r="1.2" fill="currentColor" />
+              <circle cx="8" cy="2" r="1.2" fill="currentColor" />
+              <circle cx="2" cy="7" r="1.2" fill="currentColor" />
+              <circle cx="8" cy="7" r="1.2" fill="currentColor" />
+              <circle cx="2" cy="12" r="1.2" fill="currentColor" />
+              <circle cx="8" cy="12" r="1.2" fill="currentColor" />
+            </svg>
+          </button>
+        ) : null}
         <span style={{ fontSize: 13, color: color.accent, opacity: 0.9 }}>{tag?.icon || '◉'}</span>
         <input
           value={postit.title}
