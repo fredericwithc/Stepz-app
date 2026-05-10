@@ -163,8 +163,8 @@ function clearAuthSession() {
 function validateLoginInput(email, password) {
   const e = String(email || '').trim();
   const p = String(password || '');
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return { ok: false, message: 'Indica um e-mail válido.' };
-  if (p.length < 6) return { ok: false, message: 'A senha deve ter pelo menos 6 caracteres.' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return { ok: false, message: 'Informe um e-mail válido.' };
+  if (p.length < 6) return { ok: false, message: 'A senha precisa ter pelo menos 6 caracteres.' };
   return { ok: true };
 }
 
@@ -173,17 +173,84 @@ function mapSupabaseAuthError(error) {
   const raw = String(error.message || error);
   const m = raw.toLowerCase();
   if (m.includes('invalid login credentials')) return 'E-mail ou senha incorretos.';
-  if (m.includes('email not confirmed')) return 'Confirma o e-mail antes de entrar (link enviado pelo Supabase).';
-  if (m.includes('user already registered')) return 'Este e-mail já está registado. Entra em vez de criar conta.';
+  if (m.includes('email not confirmed')) return 'Confirme seu e-mail antes de entrar (link enviado pelo Supabase).';
+  if (m.includes('user already registered')) return 'Este e-mail já está cadastrado. Faça login em vez de criar conta.';
   return raw;
 }
 
+function PasswordEyeIcon({ open }) {
+  if (open) {
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-6.5 0-10-7-10-7a18.45 18.45 0 0 1 4.13-5.18" />
+      <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-3.16 4.19" />
+      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
+  );
+}
+
+function PasswordField({ value, onChange, name, autoComplete, placeholder, inputBase, marginBottom }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{ position: 'relative', marginBottom: marginBottom != null ? marginBottom : 16 }}>
+      <input
+        type={show ? 'text' : 'password'}
+        name={name}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        style={{ ...inputBase, paddingRight: 42 }}
+      />
+      <button
+        type="button"
+        onClick={() => setShow((s) => !s)}
+        aria-label={show ? 'Ocultar senha' : 'Mostrar senha'}
+        title={show ? 'Ocultar senha' : 'Mostrar senha'}
+        tabIndex={-1}
+        style={{
+          position: 'absolute',
+          right: 6,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          background: 'transparent',
+          border: 'none',
+          color: stepzTokens.textDim,
+          cursor: 'pointer',
+          padding: 6,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 6,
+          lineHeight: 0,
+        }}
+      >
+        <PasswordEyeIcon open={show} />
+      </button>
+    </div>
+  );
+}
+
 function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
+  const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const isSignup = mode === 'signup';
+  const canSignUp = useSupabase && typeof onSignUp === 'function';
+
   const inputBase = {
     width: '100%',
     boxSizing: 'border-box',
@@ -197,6 +264,24 @@ function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
     outline: 'none',
   };
 
+  const switchMode = (next) => {
+    setMode(next);
+    setError('');
+    setInfo('');
+    setPassword('');
+    setConfirmPassword('');
+  };
+
+  const applyResult = (result) => {
+    if (!result) return;
+    if (typeof result === 'string') {
+      setError(result);
+      return;
+    }
+    if (result.error) setError(result.error);
+    if (result.info) setInfo(result.info);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -206,30 +291,15 @@ function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
       setError(v.message);
       return;
     }
-    setBusy(true);
-    try {
-      const msg = await onSubmitLogin(String(email).trim(), password);
-      if (msg) setError(msg);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleSignUp = async (e) => {
-    e.preventDefault();
-    setError('');
-    setInfo('');
-    if (!onSignUp) return;
-    const v = validateLoginInput(email, password);
-    if (!v.ok) {
-      setError(v.message);
+    if (isSignup && password !== confirmPassword) {
+      setError('As senhas não coincidem.');
       return;
     }
     setBusy(true);
     try {
-      const msg = await onSignUp(String(email).trim(), password);
-      if (msg) setError(msg);
-      else setInfo('Se o projeto pedir confirmação por e-mail, verifica a caixa de entrada; caso contrário já podes entrar.');
+      const fn = isSignup ? onSignUp : onSubmitLogin;
+      const result = await fn(String(email).trim(), password);
+      applyResult(result);
     } finally {
       setBusy(false);
     }
@@ -267,22 +337,22 @@ function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
           fontSize: 20,
           fontWeight: 700,
           letterSpacing: -0.4,
-          margin: '0 0 6px',
-          textAlign: 'center',
-        }}>
-          Entrar
-        </h1>
-        <p style={{
-          fontSize: 13,
-          color: stepzTokens.textDim,
           margin: '0 0 24px',
           textAlign: 'center',
-          lineHeight: 1.45,
         }}>
-          {useSupabase
-            ? 'Conta Supabase Auth — mesmo e-mail e senha que criares no projeto.'
-            : 'Supabase não configurado: modo local (sem servidor). Cria supabase-config.js na raiz com STEPZ_SUPABASE_URL e STEPZ_SUPABASE_ANON_KEY.'}
-        </p>
+          {isSignup ? 'Criar conta' : 'Entrar'}
+        </h1>
+        {!useSupabase ? (
+          <p style={{
+            fontSize: 13,
+            color: stepzTokens.textDim,
+            margin: '0 0 20px',
+            textAlign: 'center',
+            lineHeight: 1.45,
+          }}>
+            Supabase não configurado: modo local (sem servidor). Cria supabase-config.js na raiz com STEPZ_SUPABASE_URL e STEPZ_SUPABASE_ANON_KEY.
+          </p>
+        ) : null}
         <form onSubmit={handleSubmit}>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: stepzTokens.textDim, marginBottom: 6 }}>
             E-mail
@@ -293,21 +363,37 @@ function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
             autoComplete="email"
             value={email}
             onChange={(ev) => setEmail(ev.target.value)}
-            placeholder="tu@email.com"
+            placeholder="voce@email.com"
             style={{ ...inputBase, marginBottom: 16 }}
           />
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: stepzTokens.textDim, marginBottom: 6 }}>
             Senha
           </label>
-          <input
-            type="password"
+          <PasswordField
             name="password"
-            autoComplete="current-password"
+            autoComplete={isSignup ? 'new-password' : 'current-password'}
             value={password}
             onChange={(ev) => setPassword(ev.target.value)}
             placeholder="••••••••"
-            style={{ ...inputBase, marginBottom: error || info ? 12 : 16 }}
+            inputBase={inputBase}
+            marginBottom={isSignup ? 16 : (error || info ? 12 : 16)}
           />
+          {isSignup ? (
+            <>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: stepzTokens.textDim, marginBottom: 6 }}>
+                Confirmar senha
+              </label>
+              <PasswordField
+                name="confirm-password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(ev) => setConfirmPassword(ev.target.value)}
+                placeholder="••••••••"
+                inputBase={inputBase}
+                marginBottom={error || info ? 12 : 16}
+              />
+            </>
+          ) : null}
           {error ? (
             <div style={{
               fontSize: 12,
@@ -345,13 +431,13 @@ function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
               opacity: busy ? 0.75 : 1,
             }}
           >
-            {busy ? 'A aguardar…' : 'Entrar na app'}
+            {busy ? 'Aguardando…' : isSignup ? 'Criar conta' : 'Entrar na app'}
           </button>
-          {useSupabase && typeof onSignUp === 'function' ? (
+          {canSignUp ? (
             <button
               type="button"
               disabled={busy}
-              onClick={handleSignUp}
+              onClick={() => switchMode(isSignup ? 'login' : 'signup')}
               style={{
                 width: '100%',
                 marginTop: 10,
@@ -366,7 +452,7 @@ function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
                 background: 'transparent',
               }}
             >
-              Criar conta
+              {isSignup ? 'Já tem conta? Entrar' : 'Criar conta'}
             </button>
           ) : null}
         </form>
@@ -822,7 +908,7 @@ function App() {
         alignItems: 'center',
         justifyContent: 'center',
       }}>
-        A carregar sessão…
+        Carregando sessão…
       </div>
     );
   }
@@ -855,8 +941,16 @@ function App() {
                 if (!sb) return 'Cliente Supabase indisponível.';
                 const v = validateLoginInput(signUpEmail, signUpPassword);
                 if (!v.ok) return v.message;
-                const { error } = await sb.auth.signUp({ email: signUpEmail, password: signUpPassword });
-                return error ? mapSupabaseAuthError(error) : null;
+                const { data, error } = await sb.auth.signUp({ email: signUpEmail, password: signUpPassword });
+                if (error) return mapSupabaseAuthError(error);
+                const identities = data && data.user && data.user.identities;
+                if (Array.isArray(identities) && identities.length === 0) {
+                  return 'Este e-mail já está cadastrado. Faça login em vez de criar conta.';
+                }
+                if (data && data.session) {
+                  return null;
+                }
+                return { info: 'Conta criada! Enviamos um e-mail de confirmação. Confirme pelo link para fazer login.' };
               }
             : undefined
         }
