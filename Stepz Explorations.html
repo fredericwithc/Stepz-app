@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Stepz · Explorações</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #0a0a0b; }
+  body { font-family: 'Inter', -apple-system, system-ui, sans-serif; }
+  #root { height: 100%; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="shared-ui.jsx"></script>
+<script type="text/babel" src="dir-iso.jsx"></script>
+<script type="text/babel" src="dir-trail.jsx"></script>
+<script type="text/babel" src="dir-journey.jsx"></script>
+<script type="text/babel" src="dir-side.jsx"></script>
+<script type="text/babel" src="dir-zoomable.jsx"></script>
+
+<script type="text/babel">
+function App() {
+  const W = 1280, H = 900;
+  return (
+    <DesignCanvas>
+      <DCSection id="zoomable" title="Escada interativa · B + C com zoom" subtitle="Role/pinch p/ zoom · arraste p/ mover · hover nos degraus p/ ver a task.">
+        <DCArtboard id="zoomable-main" label="Escada com zoom" width={1280} height={900}>
+          <div style={{ width: 1280, height: 900, background: '#0a0a0b', overflow: 'hidden' }}>
+            <DashboardZoomable />
+          </div>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="escada-lateral" title="Escada lateral · seguindo sua referência" subtitle="Perfil lateral, estilo da ilustração que você mandou. 3 tratamentos.">
+        <DCArtboard id="side-classic" label="A · Clássica" width={1280} height={900}>
+          <div style={{ width: 1280, height: 900, background: '#0a0a0b', overflow: 'hidden' }}>
+            <DashboardSideClassic />
+          </div>
+        </DCArtboard>
+        <DCArtboard id="side-labeled" label="B · Com etiquetas" width={1280} height={900}>
+          <div style={{ width: 1280, height: 900, background: '#0a0a0b', overflow: 'hidden' }}>
+            <DashboardSideLabeled />
+          </div>
+        </DCArtboard>
+        <DCArtboard id="side-landing" label="C · Com patamares" width={1280} height={900}>
+          <div style={{ width: 1280, height: 900, background: '#0a0a0b', overflow: 'hidden' }}>
+            <DashboardLanding />
+          </div>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="atual" title="Como está hoje" subtitle="Sua tela atual — a escada é só um contador de degraus.">
+        <DCArtboard id="current" label="Estado atual" width={W} height={H}>
+          <div style={{ width: W, height: H, background: '#0a0a0b', color: '#f2efe9',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: 'Inter, sans-serif', padding: 60, textAlign: 'center' }}>
+            <div style={{ maxWidth: 720 }}>
+              <div style={{ fontSize: 12, color: 'rgba(232,232,234,0.5)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 20 }}>diagnóstico</div>
+              <div style={{ fontSize: 36, fontWeight: 600, letterSpacing: -1, lineHeight: 1.2, marginBottom: 28 }}>
+                A escada atual é invisível.
+              </div>
+              <div style={{ fontSize: 17, lineHeight: 1.6, color: 'rgba(232,232,234,0.7)', marginBottom: 24 }}>
+                Hoje, "Total de degraus: 300" é texto. O conceito mais poderoso do
+                produto — mostrar o caminho trilhado — não tem representação visual.
+                Em troca, o dashboard mostra 5 cards de stats que poderiam estar em
+                qualquer app.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 40, textAlign: 'left' }}>
+                {[
+                  { t: 'Honre a metáfora', d: 'A escada precisa ser a primeira coisa que o usuário vê, não uma linha de texto.' },
+                  { t: 'Mostre acúmulo', d: 'O valor emocional vem de olhar para trás e ver o quanto já foi feito.' },
+                  { t: 'Reduza o ruído', d: 'Menos cards genéricos. Stats só onde ajudam a contar a história do progresso.' },
+                ].map((c, i) => (
+                  <div key={i} style={{ background: '#17171c', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 18 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: '#7c5cff' }}>{String(i + 1).padStart(2, '0')}</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{c.t}</div>
+                    <div style={{ fontSize: 13, color: 'rgba(232,232,234,0.6)', lineHeight: 1.5 }}>{c.d}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="dir1" title="Direção 1 · Escada isométrica" subtitle="A escada como objeto 3D. Você olha para trás e vê os degraus que subiu.">
+        <DCArtboard id="iso" label="Escada isométrica" width={W} height={H}>
+          <div style={{ width: W, height: H, background: '#0a0a0b', overflow: 'hidden' }}>
+            <DashboardIso />
+          </div>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="dir2" title="Direção 2 · Trilha vertical" subtitle="Leitura cronológica. Hoje no topo, origem no final. Stats e tarefas ao lado.">
+        <DCArtboard id="trail" label="Trilha vertical" width={W} height={H}>
+          <div style={{ width: W, height: H, background: '#0a0a0b', overflow: 'hidden' }}>
+            <DashboardTrail />
+          </div>
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="dir3" title="Direção 3 · Mapa da jornada" subtitle="Escada serpenteia como trilha de jogo. Marcos como plataformas. 'Você está aqui' pulsando.">
+        <DCArtboard id="journey" label="Mapa da jornada" width={W} height={H}>
+          <div style={{ width: W, height: H, background: '#0a0a0b', overflow: 'hidden' }}>
+            <DashboardJourney />
+          </div>
+        </DCArtboard>
+      </DCSection>
+
+      <DCPostIt top={60} left={60} rotate={-3} width={200}>
+        Comece aqui →
+      </DCPostIt>
+      <DCPostIt top={60} right={60} rotate={2} width={220}>
+        Clique em qualquer artboard para abrir em foco. Use ← → pra navegar.
+      </DCPostIt>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
