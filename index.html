@@ -2,61 +2,394 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Stepz</title>
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<title>Stepz — sua jornada, um degrau de cada vez</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; }
-  html { overflow-x: clip; }
-  html, body { margin: 0; padding: 0; background: #0a0a0b; color: #f2efe9; font-family: 'Inter', system-ui, sans-serif; }
-  #root { min-width: 0; overflow-x: clip; }
-  button { font-family: inherit; touch-action: manipulation; }
-  input, select { font-family: inherit; }
-  @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-  @keyframes pop { 0% { transform: scale(.8); opacity: 0; } 60% { transform: scale(1.05); opacity: 1; } 100% { transform: scale(1); } }
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 5px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+  :root {
+    --bg: #0a0a0b;
+    --bg-2: #111114;
+    --line: rgba(255,255,255,0.08);
+    --text: #e8e8ea;
+    --text-dim: rgba(232,232,234,0.6);
+    --text-faint: rgba(232,232,234,0.45);
+    --purple: #7c5cff;
+    --purple-light: #a98aff;
+    --purple-dark: #5b3fd6;
+    --gold: oklch(0.78 0.14 70);
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { overflow-x: hidden; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ── Nav ── */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(14px);
+    background: rgba(10,10,11,0.7);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    max-width: 1200px; margin: 0 auto;
+    padding: 16px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand { display: flex; align-items: center; }
+  .brand-logo {
+    display: block;
+    height: 40px;
+    width: auto;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  @media (max-width: 720px) {
+    .brand-logo { height: 34px; }
+  }
+  .nav-actions { display: flex; align-items: center; gap: 10px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 40px; padding: 0 18px; border-radius: 10px;
+    font-size: 14px; font-weight: 600; letter-spacing: -0.1px;
+    cursor: pointer; transition: all .18s; border: none;
+    font-family: inherit;
+  }
+  .btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  .btn-ghost:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.15); }
+  .btn-primary { background: var(--purple); color: #fff; box-shadow: 0 4px 16px oklch(0.6 0.18 285 / 0.35); }
+  .btn-primary:hover { background: var(--purple-dark); transform: translateY(-1px); box-shadow: 0 6px 22px oklch(0.6 0.18 285 / 0.45); }
+  .btn-primary:active { transform: translateY(0); }
+
+  /* ── Sections ── */
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 32px; }
+
+  /* ── Hero ── */
+  .hero {
+    position: relative;
+    padding: 90px 0 110px;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(ellipse at 80% 0%, oklch(0.4 0.16 285 / 0.35), transparent 55%),
+      radial-gradient(ellipse at 10% 100%, oklch(0.35 0.14 60 / 0.18), transparent 55%);
+  }
+  .hero-grid {
+    display: grid; grid-template-columns: 1.15fr 1fr; gap: 60px; align-items: center;
+    position: relative;
+  }
+  @media (max-width: 880px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 50px; }
+    .hero { padding: 60px 0 80px; }
+  }
+
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 100px;
+    background: oklch(0.3 0.14 285 / 0.25); border: 1px solid oklch(0.6 0.16 285 / 0.3);
+    font-size: 12px; font-weight: 500; letter-spacing: 0.2px;
+    color: oklch(0.85 0.12 285);
+    margin-bottom: 22px;
+  }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--purple-light); box-shadow: 0 0 0 3px oklch(0.7 0.16 285 / 0.3); }
+
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: clamp(40px, 6vw, 64px);
+    font-weight: 600;
+    letter-spacing: -2.2px;
+    line-height: 1.02;
+    margin: 0 0 22px;
+  }
+  h1 em {
+    font-style: italic; font-weight: 500;
+    background: linear-gradient(135deg, var(--purple-light), var(--purple));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lead {
+    font-size: 17px; line-height: 1.6; color: var(--text-dim);
+    max-width: 480px; margin: 0 0 30px;
+  }
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn-lg { height: 48px; padding: 0 24px; font-size: 15px; }
+
+  .micro-trust {
+    margin-top: 22px;
+    font-size: 12.5px; color: var(--text-faint);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .micro-trust span { display: inline-flex; align-items: center; gap: 6px; }
+
+  /* ── Hero illustration ── */
+  .hero-art {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    max-width: 448px; width: 100%; margin: 0 auto;
+    border-radius: 20px;
+    background:
+      radial-gradient(ellipse at 50% 30%, oklch(0.22 0.08 280 / 0.5), transparent 65%),
+      linear-gradient(180deg, #0e0e12 0%, #0b0b0d 100%);
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .hero-art::before {
+    content: ''; position: absolute; inset: 0;
+    background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 1px, transparent 1px 8px);
+    mix-blend-mode: overlay; pointer-events: none;
+  }
+  @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+  .figure-bob { animation: bob 2.6s ease-in-out infinite; transform-origin: center bottom; }
+  @keyframes pulse { 0%,100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.4); } }
+  .pulse { animation: pulse 2.4s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+
+  /* ── How it works ── */
+  .section { padding: 80px 0; border-top: 1px solid var(--line); }
+  .section-head { text-align: center; margin-bottom: 56px; }
+  .section-eyebrow {
+    font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase;
+    font-weight: 600; color: var(--purple-light); margin-bottom: 14px;
+  }
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: clamp(30px, 4vw, 42px); font-weight: 600;
+    letter-spacing: -1.4px; line-height: 1.1;
+    margin: 0 0 12px;
+  }
+  h2 em { font-style: italic; }
+  .section-lead { font-size: 15.5px; color: var(--text-dim); max-width: 580px; margin: 0 auto; line-height: 1.6; }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  @media (max-width: 880px) { .steps { grid-template-columns: 1fr; } }
+  .step {
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 16px;
+    padding: 28px 26px; position: relative;
+    transition: border-color .2s, transform .2s;
+  }
+  .step:hover { border-color: oklch(0.6 0.16 285 / 0.35); transform: translateY(-2px); }
+  .step-num {
+    width: 32px; height: 32px; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: oklch(0.3 0.14 285 / 0.4); color: var(--purple-light);
+    font-family: 'Fraunces', serif; font-size: 16px; font-weight: 600; font-style: italic;
+    margin-bottom: 16px;
+  }
+  .step h3 { font-size: 18px; font-weight: 600; letter-spacing: -0.4px; margin: 0 0 8px; color: #fff; }
+  .step p { font-size: 14px; line-height: 1.6; color: var(--text-dim); margin: 0; }
+
+  /* ── Features (compact) ── */
+  .features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  @media (max-width: 720px) { .features { grid-template-columns: 1fr; } }
+  .feat {
+    display: flex; gap: 14px; align-items: flex-start;
+    padding: 22px; background: var(--bg-2);
+    border: 1px solid var(--line); border-radius: 14px;
+  }
+  .feat-icon {
+    flex-shrink: 0; width: 38px; height: 38px; border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: oklch(0.3 0.14 285 / 0.3); color: var(--purple-light);
+  }
+  .feat-icon svg { width: 20px; height: 20px; }
+  .feat h4 { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; margin: 0 0 4px; color: #fff; }
+  .feat p { font-size: 13.5px; line-height: 1.55; color: var(--text-dim); margin: 0; }
+
+  /* ── Final CTA ── */
+  .cta-final {
+    margin: 60px 0 80px;
+    padding: 60px 40px;
+    border-radius: 20px;
+    background:
+      radial-gradient(ellipse at 70% 30%, oklch(0.4 0.16 285 / 0.5), transparent 60%),
+      linear-gradient(135deg, oklch(0.18 0.08 280) 0%, oklch(0.12 0.06 280) 100%);
+    border: 1px solid oklch(0.6 0.16 285 / 0.25);
+    text-align: center;
+    position: relative; overflow: hidden;
+  }
+  .cta-final h2 { margin-bottom: 14px; }
+  .cta-final p { font-size: 16px; color: rgba(232,232,234,0.7); max-width: 480px; margin: 0 auto 28px; line-height: 1.6; }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--line);
+    padding: 32px 0;
+    font-size: 13px; color: var(--text-faint);
+  }
+  .footer-inner { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; }
+  .footer-links { display: flex; gap: 22px; }
+  .footer-links a:hover { color: var(--text); }
 </style>
 </head>
 <body>
-<div id="root"></div>
 
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<!-- ─── NAV ─── -->
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="brand" aria-label="Stepz home">
+      <img src="logos/svg/lockup-color-transparent-white-text.svg" alt="Stepz" class="brand-logo" draggable="false">
+    </a>
+    <div class="nav-actions">
+      <a href="app.html" class="btn btn-ghost">Entrar</a>
+      <a href="app.html?mode=signup" class="btn btn-primary">Cadastrar</a>
+    </div>
+  </div>
+</nav>
 
-<script type="text/babel">
-// Tokens — cores oficiais Stepz: Ink #0a0a0b, Paper #f2efe9, Roxo #7c5cff, gradiente marca #c79bff → #7c5cff, highlight #e9dcff.
-const stepzTokens = {
-  bg: '#0a0a0b',
-  panel: '#111114',
-  panel2: '#17171c',
-  border: 'rgba(242, 239, 233, 0.06)',
-  borderStrong: 'rgba(242, 239, 233, 0.12)',
-  text: '#f2efe9',
-  textDim: 'rgba(242, 239, 233, 0.62)',
-  textFaint: 'rgba(242, 239, 233, 0.38)',
-  accent: '#7c5cff',
-  accentSoft: 'rgba(124, 92, 255, 0.22)',
-  highlight: '#e9dcff',
-  accentGradient: 'linear-gradient(135deg, #c79bff 0%, #7c5cff 100%)',
-  success: 'oklch(0.70 0.15 145)',
-  warn: 'oklch(0.82 0.14 88)',
-  font: '"Inter", -apple-system, system-ui, sans-serif',
-  fontMono: '"JetBrains Mono", ui-monospace, Menlo, monospace',
-};
-window.stepzTokens = stepzTokens;
-</script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.js"></script>
-<script src="supabase-config.js"></script>
-<script type="text/babel" src="app/stairs.jsx"></script>
-<script type="text/babel" src="app/postits.jsx"></script>
-<script type="text/babel" src="app/supabase-client.jsx"></script>
-<script type="text/babel" src="app/state-sync.jsx"></script>
-<script type="text/babel" src="app/app.jsx"></script>
+<!-- ─── HERO ─── -->
+<section class="hero">
+  <div class="container hero-grid">
+    <div>
+      <div class="eyebrow"><span class="dot"></span>Auto-conhecimento &amp; produtividade</div>
+      <h1>Sua jornada,<br><em>um degrau de cada vez.</em></h1>
+      <p class="lead">Stepz transforma suas tarefas e hábitos em uma escada visual. Cada coisa pequena que você faz vira um degrau — e você vê, com clareza, o quanto já subiu.</p>
+      <div class="cta-row">
+        <a href="app.html?mode=signup" class="btn btn-primary btn-lg">Começar grátis</a>
+        <a href="#como-funciona" class="btn btn-ghost btn-lg">Como funciona</a>
+      </div>
+      <div class="micro-trust">
+        <span>✦ Sem cartão de crédito</span>
+        <span>✦ Privacidade local</span>
+        <span>✦ Em qualquer navegador</span>
+      </div>
+    </div>
+
+    <!-- Hero illustration -->
+    <div class="hero-art">
+      <svg width="100%" height="100%" viewBox="0 0 500 500" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="stepGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#a98aff"/>
+            <stop offset="1" stop-color="#5b3fd6"/>
+          </linearGradient>
+          <linearGradient id="goldStep" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#f6d365"/>
+            <stop offset="1" stop-color="#b8853a"/>
+          </linearGradient>
+        </defs>
+        <!-- ground line -->
+        <line x1="40" y1="430" x2="460" y2="430" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+        <!-- steps ascending -->
+        <rect x="50"  y="400" width="50" height="30" fill="url(#stepGrad)" opacity="0.35"/>
+        <rect x="100" y="370" width="50" height="60" fill="url(#stepGrad)" opacity="0.45"/>
+        <rect x="150" y="340" width="50" height="90" fill="url(#stepGrad)" opacity="0.55"/>
+        <rect x="200" y="310" width="50" height="120" fill="url(#stepGrad)" opacity="0.7"/>
+        <!-- gold milestone -->
+        <rect x="250" y="270" width="50" height="160" fill="url(#goldStep)"/>
+        <text x="275" y="305" text-anchor="middle" font-family="ui-monospace, monospace" font-size="12" font-weight="700" fill="#3a2410">10</text>
+        <!-- pulse on milestone -->
+        <circle class="pulse" cx="275" cy="265" r="4" fill="#f6d365"/>
+        <!-- continuing -->
+        <rect x="300" y="240" width="50" height="190" fill="url(#stepGrad)" opacity="0.85"/>
+        <rect x="350" y="210" width="50" height="220" fill="url(#stepGrad)"/>
+        <!-- character on top step -->
+        <g class="figure-bob" transform="translate(375 210)">
+          <ellipse cx="0" cy="0" rx="14" ry="3" fill="rgba(0,0,0,0.5)"/>
+          <rect x="-7" y="-22" width="14" height="22" rx="6" fill="#7c5cff"/>
+          <circle cx="0" cy="-30" r="9" fill="#7c5cff"/>
+          <circle cx="-3" cy="-30" r="1.5" fill="#0a0a0b"/>
+          <circle cx="3"  cy="-30" r="1.5" fill="#0a0a0b"/>
+          <path d="M -3 -25 Q 0 -23 3 -25" stroke="#0a0a0b" stroke-width="1" fill="none" stroke-linecap="round"/>
+        </g>
+        <!-- floating annotation -->
+        <g transform="translate(70 90)">
+          <rect x="0" y="0" width="160" height="48" rx="10" fill="rgba(20,20,28,0.85)" stroke="rgba(255,255,255,0.1)"/>
+          <text x="14" y="20" font-family="ui-monospace, monospace" font-size="10" fill="rgba(232,232,234,0.5)" letter-spacing="1">PATAMAR · II</text>
+          <text x="14" y="36" font-family="Fraunces, serif" font-style="italic" font-size="14" fill="#fff" font-weight="500">Ritmo · 21/50</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ─── COMO FUNCIONA ─── -->
+<section class="section" id="como-funciona">
+  <div class="container">
+    <div class="section-head">
+      <div class="section-eyebrow">Como funciona</div>
+      <h2>Três passos. Nada mais.</h2>
+      <p class="section-lead">Sem complicação, sem fricção. Você anota o que importa, e o app desenha sua escada conforme você caminha.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">I</div>
+        <h3>Anote suas tarefas e hábitos</h3>
+        <p>Adicione o que você quer realizar — uma tarefa única ou um hábito recorrente. Tudo em um só lugar, organizado por categorias.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">II</div>
+        <h3>Conclua e suba degraus</h3>
+        <p>Cada conclusão vira um degrau na sua escada. Hábitos somam por dia que você marca. A escada cresce conforme você caminha.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">III</div>
+        <h3>Veja seu progresso real</h3>
+        <p>Olhe pra escada e veja, em um só lugar, tudo que você construiu. Patamares dourados marcam conquistas. Sua jornada, desenhada.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── O QUE TEM ─── -->
+<section class="section">
+  <div class="container">
+    <div class="section-head">
+      <div class="section-eyebrow">O que está incluído</div>
+      <h2><em>Simples por fora.</em><br>Profundo por dentro.</h2>
+    </div>
+    <div class="features">
+      <div class="feat">
+        <div class="feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
+        <div>
+          <h4>Tarefas e hábitos</h4>
+          <p>Tarefas únicas ou rotinas diárias. Marque, complete, observe a escada subir.</p>
+        </div>
+      </div>
+      <div class="feat">
+        <div class="feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+        <div>
+          <h4>Post-its</h4>
+          <p>Anotações soltas, ideias, lembretes. Quadro inspirado em apps de notas, organizado por categorias.</p>
+        </div>
+      </div>
+      <div class="feat">
+        <div class="feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></div>
+        <div>
+          <h4>Linha do tempo</h4>
+          <p>Veja sua jornada por data. Cada dia revela o que foi feito — e o quanto se moveu.</p>
+        </div>
+      </div>
+      <div class="feat">
+        <div class="feat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"/><path d="M9 13.5l-2 8 5-3 5 3-2-8"/></svg></div>
+        <div>
+          <h4>Patamares e conquistas</h4>
+          <p>A cada dezena de degraus, um patamar dourado. Marcos visuais que celebram o que você construiu.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── CTA FINAL ─── -->
+<div class="container">
+  <div class="cta-final">
+    <h2>Comece a subir <em>hoje.</em></h2>
+    <p>É grátis, é seu, e está pronto. Em segundos você vê seu primeiro degrau.</p>
+    <a href="app.html?mode=signup" class="btn btn-primary btn-lg">Cadastrar e começar</a>
+  </div>
+</div>
+
+<!-- ─── FOOTER ─── -->
+<footer>
+  <div class="container footer-inner">
+    <div>© 2026 Stepz · Sua jornada, um degrau de cada vez.</div>
+    <div class="footer-links">
+      <a href="#como-funciona">Como funciona</a>
+      <a href="app.html">Entrar</a>
+      <a href="app.html?mode=signup">Cadastrar</a>
+    </div>
+  </div>
+</footer>
+
 </body>
 </html>

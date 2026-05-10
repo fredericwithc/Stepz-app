@@ -285,8 +285,8 @@ function PasswordField({ value, onChange, name, autoComplete, placeholder, input
   );
 }
 
-function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
-  const [mode, setMode] = useState('login');
+function LoginScreen({ useSupabase, onSubmitLogin, onSignUp, initialMode }) {
+  const [mode, setMode] = useState(initialMode === 'signup' ? 'signup' : 'login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -386,7 +386,7 @@ function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
           margin: '0 0 24px',
           textAlign: 'center',
         }}>
-          {isSignup ? 'Criar conta' : 'Entrar'}
+          {isSignup ? 'Criar conta' : 'Login'}
         </h1>
         {!useSupabase ? (
           <p style={{
@@ -477,7 +477,7 @@ function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
               opacity: busy ? 0.75 : 1,
             }}
           >
-            {busy ? 'Aguardando…' : isSignup ? 'Criar conta' : 'Entrar na app'}
+            {busy ? 'Aguardando…' : isSignup ? 'Criar conta' : 'Entrar'}
           </button>
           {canSignUp ? (
             <button
@@ -502,6 +502,19 @@ function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
             </button>
           ) : null}
         </form>
+        <div style={{ marginTop: 18, textAlign: 'center' }}>
+          <a
+            href="index.html"
+            style={{
+              fontSize: 12,
+              color: stepzTokens.textFaint,
+              textDecoration: 'none',
+              fontFamily: stepzTokens.font,
+            }}
+          >
+            ← Voltar à página inicial
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -1159,9 +1172,16 @@ function App() {
   const supabaseOn = typeof isSupabaseConfigured === 'function' && isSupabaseConfigured();
 
   if (!session) {
+    /* Lê ?mode=signup vindo da landing (index.html) para abrir já em modo de cadastro. */
+    let initialMode = 'login';
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('mode') === 'signup') initialMode = 'signup';
+    } catch (_) {}
     return (
       <LoginScreen
         useSupabase={supabaseOn}
+        initialMode={initialMode}
         onSubmitLogin={async (loginEmail, loginPassword) => {
           const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
           const v = validateLoginInput(loginEmail, loginPassword);
