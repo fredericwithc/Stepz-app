@@ -520,6 +520,7 @@ function App() {
   const [goalModal, setGoalModal] = useState(null);
   const [habitModalOpen, setHabitModalOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState(null);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const { isMobile } = useStepzViewport();
 
   useEffect(() => {
@@ -1100,6 +1101,7 @@ function App() {
         setTab={setTab}
         totalSteps={totalSteps}
         userEmail={session.email}
+        onChangePassword={() => setPasswordModalOpen(true)}
         onLogout={async () => {
           const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
           if (sb) await sb.auth.signOut();
@@ -1243,12 +1245,161 @@ function App() {
           onDelete={goalModal.goal?.id ? () => { deleteGoal(goalModal.goal.id); setGoalModal(null); } : undefined}
         />
       )}
+      {passwordModalOpen ? (
+        <ChangePasswordModal
+          onClose={() => setPasswordModalOpen(false)}
+          onSubmit={async (newPassword) => {
+            const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
+            if (!sb) return 'Supabase não configurado: não é possível alterar a senha.';
+            try {
+              const { error } = await sb.auth.updateUser({ password: newPassword });
+              if (error) return mapSupabaseAuthError(error);
+              return null;
+            } catch (e) {
+              return String(e && e.message ? e.message : e);
+            }
+          }}
+        />
+      ) : null}
       </TaskGridColumnsProvider>
     </div>
   );
 }
 
-function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout }) {
+function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDocMouseDown = (e) => {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDocMouseDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  /** Inicial do email para o avatar (Foi pensada de ser estável: sempre o primeiro char a-z, ou "?" se vazio). */
+  const initial = (() => {
+    const s = String(userEmail || '').trim();
+    const ch = s.charAt(0).toUpperCase();
+    return /[A-Z0-9]/.test(ch) ? ch : '?';
+  })();
+
+  const itemBtn = {
+    width: '100%',
+    textAlign: 'left',
+    background: 'transparent',
+    border: 'none',
+    padding: '10px 14px',
+    fontSize: 13,
+    color: stepzTokens.text,
+    cursor: 'pointer',
+    fontFamily: stepzTokens.font,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 6,
+  };
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={userEmail ? `Perfil · ${userEmail}` : 'Perfil'}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 999,
+          border: `1px solid ${open ? stepzTokens.borderStrong : stepzTokens.border}`,
+          background: stepzTokens.accentGradient || stepzTokens.accent,
+          color: '#0a0a0b',
+          fontWeight: 700,
+          fontSize: 13,
+          cursor: 'pointer',
+          fontFamily: stepzTokens.font,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 0,
+        }}
+      >
+        {initial}
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            right: 0,
+            minWidth: isMobile ? 240 : 260,
+            maxWidth: 320,
+            background: stepzTokens.panel,
+            border: `1px solid ${stepzTokens.borderStrong}`,
+            borderRadius: 12,
+            padding: 6,
+            boxShadow: '0 18px 36px rgba(0,0,0,0.45)',
+            zIndex: 30,
+          }}
+        >
+          <div style={{ padding: '8px 12px 10px', borderBottom: `1px solid ${stepzTokens.border}`, marginBottom: 4 }}>
+            <div style={{ fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase', color: stepzTokens.textFaint, marginBottom: 4 }}>conta</div>
+            <div
+              title={userEmail}
+              style={{
+                fontSize: 12,
+                color: stepzTokens.textDim,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {userEmail || 'Sem e-mail'}
+            </div>
+          </div>
+          {typeof onChangePassword === 'function' ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onChangePassword(); }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              style={itemBtn}
+            >
+              <span aria-hidden style={{ fontSize: 14 }}>🔒</span>
+              <span>Editar senha</span>
+            </button>
+          ) : null}
+          {typeof onLogout === 'function' ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onLogout(); }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              style={{ ...itemBtn, color: 'oklch(0.78 0.14 25)' }}
+            >
+              <span aria-hidden style={{ fontSize: 14 }}>↩</span>
+              <span>Sair</span>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassword }) {
   const { isMobile } = useStepzViewport();
   const tabs = [
     { id: 'home', label: 'Início' },
@@ -1258,7 +1409,10 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout }) {
     { id: 'postits', label: 'Post-its' },
     { id: 'journey', label: 'Jornada' },
   ];
-  const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  /* Em mobile usamos formato compacto da data ("dom, 10 mai") para caber na mesma linha do chip + avatar. */
+  const todayFull = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const todayShort = new Date().toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' });
+  const today = isMobile ? todayShort : todayFull;
   return (
     <div style={{
       borderBottom: `1px solid ${stepzTokens.border}`,
@@ -1280,56 +1434,54 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: isMobile ? 10 : 12,
+          gap: isMobile ? 8 : 14,
+          flexWrap: 'nowrap',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, minWidth: 0, flex: '1 1 auto' }}>
             <img
               src="logos/svg/lockup-color-transparent-white-text.svg"
               alt="Stepz"
               draggable={false}
-              style={{ height: isMobile ? 40 : 48, width: 'auto', display: 'block', objectFit: 'contain' }}
+              style={{ height: isMobile ? 36 : 48, width: 'auto', display: 'block', objectFit: 'contain', flexShrink: 0 }}
             />
-            <div style={{ fontSize: 12, color: stepzTokens.textFaint, marginLeft: 4, padding: '3px 8px', background: 'rgba(255,255,255,0.04)', borderRadius: 4 }}>
+            <div style={{
+              fontSize: isMobile ? 11 : 12,
+              color: stepzTokens.textFaint,
+              marginLeft: 2,
+              padding: isMobile ? '2px 7px' : '3px 8px',
+              background: 'rgba(255,255,255,0.04)',
+              borderRadius: 4,
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}>
               {totalSteps} {totalSteps === 1 ? 'degrau' : 'degraus'}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 14, flexWrap: 'wrap', justifyContent: 'flex-end', flex: isMobile ? '1 1 auto' : 'none', minWidth: 0 }}>
-            {userEmail ? (
-              <span
-                title={userEmail}
-                style={{
-                  fontSize: 12,
-                  color: stepzTokens.textDim,
-                  maxWidth: isMobile ? 160 : 200,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {userEmail}
-              </span>
-            ) : null}
-            <div style={{ fontSize: isMobile ? 12 : 13, color: stepzTokens.textDim, textAlign: 'right', lineHeight: 1.25 }}>{today}</div>
-            {typeof onLogout === 'function' ? (
-              <button
-                type="button"
-                onClick={onLogout}
-                title="Terminar sessão"
-                style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  border: `1px solid ${stepzTokens.borderStrong}`,
-                  color: stepzTokens.textDim,
-                  fontSize: 11,
-                  padding: '6px 10px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  fontFamily: stepzTokens.font,
-                }}
-              >
-                sair
-              </button>
-            ) : null}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: isMobile ? 8 : 14,
+            justifyContent: 'flex-end',
+            flexShrink: 0,
+          }}>
+            <div
+              title={todayFull}
+              style={{
+                fontSize: isMobile ? 11 : 13,
+                color: stepzTokens.textDim,
+                textAlign: 'right',
+                lineHeight: 1.2,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {today}
+            </div>
+            <ProfileMenu
+              userEmail={userEmail}
+              onChangePassword={onChangePassword}
+              onLogout={onLogout}
+              isMobile={isMobile}
+            />
           </div>
         </div>
         <div style={{
@@ -4788,6 +4940,125 @@ function TaskEditModal({ task, onClose, onSave, projectOptions = [] }) {
           <button onClick={submit} style={modalPrimaryBtnStyle}>salvar task</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ChangePasswordModal({ onClose, onSubmit }) {
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const inputBase = {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: '10px 12px',
+    borderRadius: 8,
+    border: `1px solid ${stepzTokens.borderStrong}`,
+    background: 'rgba(0,0,0,0.35)',
+    color: stepzTokens.text,
+    fontSize: 13,
+    fontFamily: stepzTokens.font,
+    outline: 'none',
+  };
+
+  const handleSubmit = async (e) => {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    setError('');
+    setInfo('');
+    if (newPwd.length < 6) {
+      setError('A nova senha precisa ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (newPwd !== confirmPwd) {
+      setError('As senhas não coincidem.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const msg = await onSubmit(newPwd);
+      if (msg) {
+        setError(msg);
+      } else {
+        setInfo('Senha alterada com sucesso.');
+        setTimeout(() => onClose(), 900);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 50,
+        padding: 16,
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          width: '100%',
+          maxWidth: 380,
+          background: stepzTokens.panel,
+          border: `1px solid ${stepzTokens.borderStrong}`,
+          borderRadius: 14,
+          padding: '22px 22px 20px',
+          boxShadow: '0 24px 48px rgba(0,0,0,0.45)',
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: -0.2, marginBottom: 4 }}>Editar senha</div>
+        <div style={{ fontSize: 12, color: stepzTokens.textDim, marginBottom: 16, lineHeight: 1.4 }}>
+          Escolha uma nova senha com pelo menos 6 caracteres.
+        </div>
+        <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: stepzTokens.textDim, marginBottom: 6 }}>
+          Nova senha
+        </label>
+        <PasswordField
+          name="new-password"
+          autoComplete="new-password"
+          value={newPwd}
+          onChange={(ev) => setNewPwd(ev.target.value)}
+          placeholder="••••••••"
+          inputBase={inputBase}
+          marginBottom={14}
+        />
+        <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: stepzTokens.textDim, marginBottom: 6 }}>
+          Confirmar nova senha
+        </label>
+        <PasswordField
+          name="confirm-new-password"
+          autoComplete="new-password"
+          value={confirmPwd}
+          onChange={(ev) => setConfirmPwd(ev.target.value)}
+          placeholder="••••••••"
+          inputBase={inputBase}
+          marginBottom={error || info ? 10 : 14}
+        />
+        {error ? (
+          <div style={{ fontSize: 12, color: stepzTokens.warn, marginBottom: 12, lineHeight: 1.35 }}>{error}</div>
+        ) : null}
+        {info ? (
+          <div style={{ fontSize: 12, color: stepzTokens.success, marginBottom: 12, lineHeight: 1.35 }}>{info}</div>
+        ) : null}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+          <button type="button" onClick={onClose} style={modalGhostBtnStyle}>cancelar</button>
+          <button type="submit" disabled={busy} style={{ ...modalPrimaryBtnStyle, opacity: busy ? 0.7 : 1, cursor: busy ? 'wait' : 'pointer' }}>
+            {busy ? 'Salvando…' : 'Salvar senha'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
