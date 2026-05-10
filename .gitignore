@@ -1,3 +1,2 @@
-# Credenciais Supabase (URL + anon key) — não commitar
-supabase-config.js
+# Override local de credenciais Supabase (anon key fica em supabase-config.js, que é público por design — RLS protege).
 supabase-config.local.js
