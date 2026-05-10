@@ -1,5 +1,3 @@
-import React from 'react';
-
 const { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useContext, createContext } = React;
 const TASK_STATUS = [
   { id: 'todo', label: 'A fazer' },
