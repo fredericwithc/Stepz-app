@@ -464,7 +464,8 @@ function LoginScreen({ useSupabase, onSubmitLogin, onSignUp }) {
 function App() {
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(false);
-  const [state, setState] = useState(loadState);
+  const [state, setState] = useState(defaultState);
+  const activeUserKeyRef = useRef(null);
   const [tab, setTab] = useState('home');
   const [stepDetail, setStepDetail] = useState(null);
   const [celebrate, setCelebrate] = useState(null);
@@ -496,8 +497,101 @@ function App() {
     };
   }, []);
 
-  // Persist on every change
-  useEffect(() => { saveState(state); }, [state]);
+  /* Refs auxiliares para sync remoto (Supabase):
+       - lastSyncedJsonRef: último JSON que sabemos estar igual no remoto. Evita ciclo de eco
+         (gravar de volta o que acabámos de receber) e gravações redundantes.
+       - remoteSaveTimerRef: timer do debounce (1.2s) das gravações remotas.
+       - bootstrapInFlightRef: tag por user para abortar bootstraps obsoletos quando se troca de conta. */
+  const lastSyncedJsonRef = useRef('');
+  const remoteSaveTimerRef = useRef(null);
+  const bootstrapInFlightRef = useRef(null);
+
+  /* Ao mudar de utilizador (login/logout/troca de conta):
+       1) Carrega o cache local imediato (snappy UX).
+       2) Em background pede o estado ao Supabase — se houver, substitui pelo do servidor.
+          Se não houver linha ainda, faz upload do local (bootstrap).
+     Chave local: `stepz.v1:<email>`; chave remota: `user_state.user_id = auth.uid()`. */
+  useEffect(() => {
+    if (!authReady) return;
+    const userKey = session && session.email ? session.email.toLowerCase() : null;
+    if (userKey === activeUserKeyRef.current) return;
+    activeUserKeyRef.current = userKey;
+    if (remoteSaveTimerRef.current) {
+      clearTimeout(remoteSaveTimerRef.current);
+      remoteSaveTimerRef.current = null;
+    }
+    if (!userKey) {
+      lastSyncedJsonRef.current = '';
+      bootstrapInFlightRef.current = null;
+      setState(defaultState());
+      return undefined;
+    }
+    const local = loadState(userKey);
+    lastSyncedJsonRef.current = '';
+    setState(local);
+    const bootstrapTag = Symbol('bootstrap');
+    bootstrapInFlightRef.current = bootstrapTag;
+    (async () => {
+      const rs = typeof window !== 'undefined' ? window.stepzRemoteState : null;
+      if (!rs || typeof rs.load !== 'function') return;
+      let res;
+      try {
+        res = await rs.load();
+      } catch (_) {
+        return;
+      }
+      if (bootstrapInFlightRef.current !== bootstrapTag) return;
+      if (activeUserKeyRef.current !== userKey) return;
+      if (res && res.ok && res.found && res.state && typeof res.state === 'object') {
+        lastSyncedJsonRef.current = JSON.stringify(res.state);
+        if (remoteSaveTimerRef.current) {
+          clearTimeout(remoteSaveTimerRef.current);
+          remoteSaveTimerRef.current = null;
+        }
+        setState(res.state);
+        return;
+      }
+      if (res && res.ok && !res.found && typeof rs.save === 'function') {
+        const localJson = JSON.stringify(local);
+        lastSyncedJsonRef.current = localJson;
+        if (remoteSaveTimerRef.current) {
+          clearTimeout(remoteSaveTimerRef.current);
+          remoteSaveTimerRef.current = null;
+        }
+        try { await rs.save(local); } catch (_) { /* swallow — local continua válido */ }
+      }
+    })();
+    return undefined;
+  }, [authReady, session]);
+
+  /* A cada mudança de estado, persiste:
+       - LOCAL: imediato (cache para offline e arranque rápido).
+       - REMOTO: com debounce de 1.2s — só se o JSON realmente diferir do último que sabemos
+         estar igual ao remoto (evita eco e gravações redundantes). */
+  useEffect(() => {
+    const userKey = activeUserKeyRef.current;
+    if (!userKey) return undefined;
+    saveState(userKey, state);
+    const json = JSON.stringify(state);
+    if (remoteSaveTimerRef.current) {
+      clearTimeout(remoteSaveTimerRef.current);
+      remoteSaveTimerRef.current = null;
+    }
+    if (json === lastSyncedJsonRef.current) return undefined;
+    const snapshot = state;
+    remoteSaveTimerRef.current = setTimeout(() => {
+      const rs = typeof window !== 'undefined' ? window.stepzRemoteState : null;
+      if (!rs || typeof rs.save !== 'function') return;
+      lastSyncedJsonRef.current = json;
+      rs.save(snapshot).catch(() => { /* ignora falhas de rede — local fica como verdade temporária */ });
+    }, 1200);
+    return () => {
+      if (remoteSaveTimerRef.current) {
+        clearTimeout(remoteSaveTimerRef.current);
+        remoteSaveTimerRef.current = null;
+      }
+    };
+  }, [state]);
 
   // ── Mutations ──
   const completeTask = (taskId) => {
@@ -870,12 +964,6 @@ function App() {
     });
   };
 
-  const resetAll = () => {
-    if (!confirm('Apagar todos os dados e começar do zero?')) return;
-    const fresh = defaultState();
-    setState(fresh);
-  };
-
   // Stats
   const totalSteps = state.steps.length;
   const todaySteps = state.steps.filter(s => s.completedAt.slice(0, 10) === todayStr()).length;
@@ -964,7 +1052,6 @@ function App() {
         tab={tab}
         setTab={setTab}
         totalSteps={totalSteps}
-        onReset={resetAll}
         userEmail={session.email}
         onLogout={async () => {
           const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
@@ -1107,7 +1194,7 @@ function App() {
   );
 }
 
-function AppHeader({ tab, setTab, totalSteps, onReset, userEmail, onLogout }) {
+function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout }) {
   const tabs = [
     { id: 'home', label: 'Início' },
     { id: 'tasks', label: 'Tasks' },
@@ -1149,12 +1236,6 @@ function AppHeader({ tab, setTab, totalSteps, onReset, userEmail, onLogout }) {
               </span>
             ) : null}
             <div style={{ fontSize: 13, color: stepzTokens.textDim }}>{today}</div>
-            <button onClick={onReset} title="Resetar dados"
-              style={{
-                background: 'transparent', border: `1px solid ${stepzTokens.border}`,
-                color: stepzTokens.textFaint, fontSize: 11, padding: '6px 10px', borderRadius: 6,
-                cursor: 'pointer', fontFamily: stepzTokens.font,
-              }}>resetar</button>
             {typeof onLogout === 'function' ? (
               <button
                 type="button"

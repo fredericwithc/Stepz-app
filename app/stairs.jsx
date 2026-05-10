@@ -4,6 +4,12 @@
 
 const LS_KEY = 'stepz.v1';
 
+/** Constrói a chave do localStorage por utilizador. Sem chave/utilizador devolve a chave legacy. */
+function lsKeyForUser(userKey) {
+  const k = String(userKey || '').trim().toLowerCase();
+  return k ? `${LS_KEY}:${k}` : LS_KEY;
+}
+
 const LEVEL_META = [
   { n: 1, name: 'Despertar' },
   { n: 2, name: 'Ritmo' },
@@ -59,9 +65,10 @@ const CATEGORIES = BASE_CATEGORIES;
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
-function loadState() {
+function loadState(userKey) {
+  const storageKey = lsKeyForUser(userKey);
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return defaultState();
     const s = JSON.parse(raw);
     const merged = { ...defaultState(), ...s };
@@ -77,17 +84,6 @@ function loadState() {
         })).filter((m) => m.title)
         : [],
     }));
-    /* Estado antigo no localStorage vinha com goals: [] e não recebia os exemplos do defaultState. */
-    if (merged.goals.length === 0) {
-      merged.goals = exampleGoalsSeed().map((g) => ({
-        ...g,
-        milestones: (g.milestones || []).map((m) => ({
-          id: m.id || cryptoId(),
-          title: String(m.title || '').trim(),
-          done: !!m.done,
-        })).filter((m) => m.title),
-      }));
-    }
     if (Array.isArray(merged.steps)) {
       merged.steps = merged.steps
         .filter(Boolean)
@@ -157,31 +153,29 @@ function defaultState() {
   return {
     createdAt: todayStr(),
     categories: BASE_CATEGORIES.map(c => ({ ...c })),
-    tasks: [
-      { id: cryptoId(), title: 'Meditar 10 minutos', category: 'mind', done: false, dueDate: todayStr(), project: 'Pessoal' },
-      { id: cryptoId(), title: 'Caminhar 30 minutos', category: 'health', done: false, dueDate: todayStr(), project: 'Saude' },
-      { id: cryptoId(), title: 'Escrever no diário', category: 'reflect', done: false, dueDate: todayStr(), project: 'Pessoal' },
-    ],
-    habits: [
-      { id: cryptoId(), title: 'Meditar', category: 'mind', history: [] },
-      { id: cryptoId(), title: 'Ler 20 páginas', category: 'learn', history: [] },
-      { id: cryptoId(), title: 'Exercício', category: 'health', history: [] },
-    ],
-    // Each step is an entry of {taskId, title, category, completedAt}
+    tasks: [],
+    habits: [],
+    /** Cada step é {taskId, title, category, completedAt}. */
     steps: [],
     /** Mapa tag (texto exato após trim) → cor CSS; usado na lista de tasks. */
     taskTagColors: {},
     /** Metas de médio/longo prazo: marcos e progresso derivado. */
-    goals: exampleGoalsSeed(),
-    postits: typeof defaultPostits === 'function' ? defaultPostits() : [],
+    goals: [],
+    postits: [],
   };
 }
 function cryptoId() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 }
 
-function saveState(s) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(s)); } catch (e) {}
+function saveState(userKey, s) {
+  /* Retrocompatibilidade: se chamado como saveState(state) (uma única arg objeto), grava na chave legacy. */
+  if (s === undefined && userKey && typeof userKey === 'object') {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(userKey)); } catch (e) {}
+    return;
+  }
+  const storageKey = lsKeyForUser(userKey);
+  try { localStorage.setItem(storageKey, JSON.stringify(s)); } catch (e) {}
 }
 
 // ── Layout math (zoomable staircase) ──
