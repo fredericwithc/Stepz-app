@@ -6361,11 +6361,18 @@ function computeHabitStreak(history) {
   return streak;
 }
 function formatDate(iso) {
-  const d = new Date(iso);
+  if (!iso) return '—';
+  const key = String(iso).slice(0, 10);
+  // Ancora ao meio-dia local: evita o "off-by-one" em fusos negativos (ex.: UTC-3),
+  // onde "YYYY-MM-DD" pura é interpretada como meia-noite UTC e cai para o dia anterior.
+  const d = new Date(`${key}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return '—';
   const today = todayStr();
-  const ystr = (() => { const y = new Date(); y.setDate(y.getDate() - 1); return y.toISOString().slice(0, 10); })();
-  if (iso === today) return 'Hoje';
-  if (iso === ystr) return 'Ontem';
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  const ystr = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+  if (key === today) return 'Hoje';
+  if (key === ystr) return 'Ontem';
   return d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
