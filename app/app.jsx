@@ -1044,29 +1044,37 @@ function App() {
     });
   };
 
-  const toggleHabitToday = (habitId) => {
+  /** Marca/desmarca um hábito numa data específica (YYYY-MM-DD). Não permite datas futuras. */
+  const toggleHabitDate = (habitId, dateStr) => {
+    const target = String(dateStr || '').slice(0, 10);
+    if (!target) return;
     const today = todayStr();
+    if (target > today) return; // bloqueia futuro
     setState(s => {
       const h = s.habits.find(x => x.id === habitId);
       if (!h) return s;
-      const wasDoneToday = h.history.includes(today);
+      const wasDone = h.history.includes(target);
       let newHistory, addStep = false, removeStep = false;
-      if (wasDoneToday) {
-        newHistory = h.history.filter(d => d !== today);
+      if (wasDone) {
+        newHistory = h.history.filter(d => d !== target);
         removeStep = true;
       } else {
-        newHistory = [...h.history, today].sort();
+        newHistory = [...h.history, target].sort();
         addStep = true;
       }
       let newSteps = s.steps;
       if (addStep) {
+        // Para dias passados, ancora o completedAt ao meio-dia do dia para preservar a ordem cronológica.
+        const completedAt = target === today
+          ? new Date().toISOString()
+          : new Date(`${target}T12:00:00`).toISOString();
         newSteps = [...s.steps, {
           id: cryptoId(),
           habitId: h.id,
           title: h.title,
           category: h.category,
           ...(h.color ? { color: h.color } : {}),
-          completedAt: new Date().toISOString(),
+          completedAt,
         }];
         const newCount = newSteps.length;
         if (newCount % 10 === 0 || newCount % STEPS_PER_LEVEL === 0) {
@@ -1075,8 +1083,7 @@ function App() {
           setCelebrate({ count: newCount, isLevel: false, brief: true });
         }
       } else if (removeStep) {
-        // Remove most recent step for this habit
-        const idx = [...s.steps].map((st, i) => ({ st, i })).reverse().find(({ st }) => st.habitId === h.id && st.completedAt.slice(0, 10) === today)?.i;
+        const idx = [...s.steps].map((st, i) => ({ st, i })).reverse().find(({ st }) => st.habitId === h.id && st.completedAt.slice(0, 10) === target)?.i;
         if (idx != null) newSteps = s.steps.filter((_, i) => i !== idx);
       }
       return {
@@ -1086,6 +1093,8 @@ function App() {
       };
     });
   };
+
+  const toggleHabitToday = (habitId) => toggleHabitDate(habitId, todayStr());
 
   const addHabit = (title) => {
     const t = String(title || '').trim();
@@ -1402,6 +1411,7 @@ function App() {
           <HabitsView
             state={state}
             onToggle={toggleHabitToday}
+            onToggleDate={toggleHabitDate}
             onAdd={addHabit}
             onDelete={deleteHabit}
             onOpenCreateModal={() => setHabitModalOpen(true)}
@@ -2342,6 +2352,15 @@ function groupTasksByProject(tasks, projectOrder) {
   return ordered;
 }
 
+/** Iniciais dos dias da semana em PT-BR (índice 0 = domingo, como Date.getDay()). */
+const WEEKDAY_LETTERS_PT = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+function weekdayLetterPt(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(`${String(dateStr).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  return WEEKDAY_LETTERS_PT[d.getDay()];
+}
+
 function habitCategoryMeta(habit, categories) {
   const list = Array.isArray(categories) && categories.length ? categories : baseCategoriesSeed();
   const id = habit?.category || defaultTaskCategoryId();
@@ -2489,7 +2508,7 @@ function HabitsAddBar({ onAdd, onOpenCreateModal }) {
   );
 }
 
-function HabitsView({ state, onToggle, onAdd, onDelete, onOpenCreateModal, onEditHabit }) {
+function HabitsView({ state, onToggle, onToggleDate, onAdd, onDelete, onOpenCreateModal, onEditHabit }) {
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18, width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
       <Panel2 title="Seus hábitos" action={<HabitsAddBar onAdd={onAdd} onOpenCreateModal={onOpenCreateModal} />}>
@@ -2500,6 +2519,7 @@ function HabitsView({ state, onToggle, onAdd, onDelete, onOpenCreateModal, onEdi
               habit={h}
               categories={state.categories}
               onToggle={() => onToggle(h.id)}
+              onToggleDate={onToggleDate ? (date) => onToggleDate(h.id, date) : undefined}
               onDelete={() => onDelete(h.id)}
               onEdit={onEditHabit ? () => onEditHabit(h) : undefined}
             />
@@ -5201,7 +5221,7 @@ function HabitRowToday({ habit, onToggle, categories, onEdit }) {
   );
 }
 
-function HabitFullRow({ habit, onToggle, onDelete, onEdit, categories }) {
+function HabitFullRow({ habit, onToggle, onToggleDate, onDelete, onEdit, categories }) {
   const today = todayStr();
   const doneToday = habit.history.includes(today);
   const streak = computeHabitStreak(habit.history);
@@ -5212,8 +5232,14 @@ function HabitFullRow({ habit, onToggle, onDelete, onEdit, categories }) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const ds = d.toISOString().slice(0, 10);
-    days.push({ date: ds, done: habit.history.includes(ds) });
+    days.push({
+      date: ds,
+      done: habit.history.includes(ds),
+      letter: weekdayLetterPt(ds),
+      isToday: ds === today,
+    });
   }
+  const SLOT = 14;
   return (
     <div style={{
       padding: '14px 0 14px 6px',
@@ -5240,13 +5266,55 @@ function HabitFullRow({ habit, onToggle, onDelete, onEdit, categories }) {
             {streak} {streak === 1 ? 'dia' : 'dias'} · {habit.history.length} total
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
-          {days.map(d => (
-            <div key={d.date} title={d.date} style={{
-              width: 12, height: 12, borderRadius: 2,
-              background: d.done ? accent : 'rgba(255,255,255,0.06)',
-            }} />
-          ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 3 }}>
+            {days.map(d => (
+              <div key={`l-${d.date}`} style={{
+                width: SLOT,
+                textAlign: 'center',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: 0.4,
+                color: d.isToday ? accent : stepzTokens.textFaint,
+                lineHeight: 1,
+              }}>{d.letter}</div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 3 }}>
+            {days.map(d => {
+              const clickable = !!onToggleDate;
+              const dateLabel = new Date(`${d.date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+              const title = `${dateLabel}${d.isToday ? ' (hoje)' : ''} · ${d.done ? 'feito — clique para desmarcar' : 'clique para marcar'}`;
+              const commonStyle = {
+                width: SLOT,
+                height: SLOT,
+                borderRadius: 3,
+                background: d.done ? accent : 'rgba(255,255,255,0.06)',
+                border: d.isToday && !d.done ? `1px solid color-mix(in srgb, ${accent} 55%, transparent)` : 'none',
+                padding: 0,
+                boxSizing: 'border-box',
+              };
+              if (!clickable) {
+                return <div key={d.date} title={title} style={commonStyle} />;
+              }
+              return (
+                <button
+                  key={d.date}
+                  type="button"
+                  title={title}
+                  aria-pressed={d.done}
+                  onClick={(e) => { e.stopPropagation(); onToggleDate(d.date); }}
+                  style={{
+                    ...commonStyle,
+                    cursor: 'pointer',
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                    boxShadow: 'none',
+                  }}
+                />
+              );
+            })}
+          </div>
         </div>
         {onEdit ? (
           <button type="button" title="Editar hábito" onClick={(e) => { e.stopPropagation(); onEdit(); }}
