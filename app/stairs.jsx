@@ -102,6 +102,9 @@ function loadState(userKey) {
         }
       }
     }
+    if (!merged.projectColors || typeof merged.projectColors !== 'object' || Array.isArray(merged.projectColors)) {
+      merged.projectColors = {};
+    }
     return merged;
   } catch (e) { return defaultState(); }
 }
@@ -177,6 +180,8 @@ function defaultState() {
     postits: [],
     /** Ordem manual dos projetos (nomes únicos). Drives groupTasksByProject. */
     projectOrder: [],
+    /** Nome do projeto (após trim) → cor CSS (#hex). Sobrepõe a cor automática dos degraus. */
+    projectColors: {},
   };
 }
 function cryptoId() {
@@ -248,6 +253,32 @@ function liveStairsCategoryRow(catId, categories) {
   return list.find((c) => c.id === catId) || { id: catId, label: catId || '—', color: 'rgba(242,239,233,0.42)' };
 }
 
+/**
+ * Cor determinística por nome de projeto. Hash simples sobre os char codes para escolher
+ * uma entrada da paleta fixa. O mapa `overrides` (ex.: `state.projectColors`) substitui a cor
+ * quando o utilizador define uma cor manual para aquele nome de projeto.
+ */
+const STEPZ_PROJECT_PALETTE = [
+  '#7c5cff', // roxo Stepz
+  '#286892', // azul
+  '#366b52', // verde
+  '#a87626', // âmbar
+  '#9f4176', // rosa
+  '#a73d3d', // vermelho
+  '#735491', // lavender
+  '#3d7a7a', // teal
+  '#6b5f3c', // oliva
+  '#523628', // marrom
+];
+function colorForProjectName(name, overrides) {
+  const key = String(name || '').trim();
+  if (!key) return STEPZ_PROJECT_PALETTE[0];
+  if (overrides && typeof overrides === 'object' && overrides[key]) return overrides[key];
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h + key.charCodeAt(i) * (i + 1)) % 2147483647;
+  return STEPZ_PROJECT_PALETTE[Math.abs(h) % STEPZ_PROJECT_PALETTE.length];
+}
+
 function liveStairsResolveRich(step, tasks, habits) {
   if (step?.completedGoalId) {
     const description = String(step.description || '').trim();
@@ -300,6 +331,7 @@ function LiveStairs({
   habits = [],
   categories,
   taskTagColors = {},
+  projectColors = {},
   layoutCompact = false,
 }) {
   const containerRef = React.useRef(null);
@@ -459,11 +491,19 @@ function LiveStairs({
     const stepData = completed ? steps[i] : null;
     const isGoalStep = !!(completed && stepData?.completedGoalId);
     const accentFallback = typeof stepzTokens !== 'undefined' ? stepzTokens.accent : '#7c5cff';
-    const catFill = (stepData?.color)
-      ? stepData.color
-      : (stepData && stepData.category
-        ? liveStairsCategoryRow(stepData.category, categories).color
-        : accentFallback);
+    /* Tasks: a cor passa a vir do projeto (não da categoria, que foi descontinuada).
+       Hábitos e metas mantêm a cor explícita (step.color) ou a cor da categoria como fallback. */
+    let catFill;
+    if (stepData?.color) {
+      catFill = stepData.color;
+    } else if (stepData?.taskId) {
+      const projectName = String(stepData.project || '').trim();
+      catFill = projectName ? colorForProjectName(projectName, projectColors) : accentFallback;
+    } else if (stepData?.category) {
+      catFill = liveStairsCategoryRow(stepData.category, categories).color;
+    } else {
+      catFill = accentFallback;
+    }
 
     let treadFill;
     let riserFill;
@@ -665,8 +705,21 @@ function LiveStairs({
   const hoverCat = hoverRich ? liveStairsCategoryRow(hoverRich.category, categories) : null;
   const hoverPaletteHex = hoverData?.color ? String(hoverData.color).trim() : '';
   const hoverUsePalette = !!(hoverPaletteHex && (hoverRich?.kind === 'goal' || hoverRich?.kind === 'habit'));
-  const hoverChipBg = hoverUsePalette ? hoverPaletteHex : (hoverCat?.color ?? 'rgba(242,239,233,0.42)');
-  const hoverChipLabel = hoverUsePalette ? goalPaletteHoverLabel(hoverPaletteHex) : (hoverCat?.label ?? '—');
+  /* Para tasks o chip mostra o projeto + cor do projeto. Hábitos e metas mantêm a categoria/paleta. */
+  const hoverIsTask = hoverRich?.kind === 'task';
+  const hoverProjectName = hoverIsTask ? String(hoverRich?.project || '').trim() : '';
+  let hoverChipBg;
+  let hoverChipLabel;
+  if (hoverUsePalette) {
+    hoverChipBg = hoverPaletteHex;
+    hoverChipLabel = goalPaletteHoverLabel(hoverPaletteHex);
+  } else if (hoverIsTask && hoverProjectName) {
+    hoverChipBg = colorForProjectName(hoverProjectName, projectColors);
+    hoverChipLabel = hoverProjectName;
+  } else {
+    hoverChipBg = hoverCat?.color ?? 'rgba(242,239,233,0.42)';
+    hoverChipLabel = hoverCat?.label ?? '—';
+  }
   const currentLevel = Math.floor(currentIdx / STEPS_PER_LEVEL) + 1;
   const stepsInLevel = currentIdx % STEPS_PER_LEVEL;
 
@@ -790,14 +843,8 @@ function LiveStairs({
               <span style={{
                 fontSize: 10, fontWeight: 600, padding: '3px 9px', borderRadius: 999,
                 color: '#fff', background: hoverChipBg,
-              }}>{hoverChipLabel}</span>
-              {hoverRich.kind === 'task' && hoverRich.project ? (
-                <span style={{
-                  fontSize: 10, color: stepzTokens.textDim,
-                  padding: '3px 9px', borderRadius: 999, border: `1px solid ${stepzTokens.border}`,
-                  maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }} title={hoverRich.project}>{hoverRich.project}</span>
-              ) : null}
+                maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }} title={hoverChipLabel}>{hoverChipLabel}</span>
               {hoverRich.kind === 'task' && hoverRich.priorityLabel ? (
                 <span style={{
                   fontSize: 10, color: stepzTokens.textDim,

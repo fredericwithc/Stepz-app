@@ -93,6 +93,14 @@ function colorForTaskTag(tag, tagColors) {
   return TASK_TAG_COLORS[Math.abs(h) % TASK_TAG_COLORS.length];
 }
 
+/** Cor do projeto: override em `projectColors` ou paleta determinística (definida em stairs.jsx). */
+function stepzResolveProjectColor(projectName, projectColors) {
+  const map = projectColors && typeof projectColors === 'object' && !Array.isArray(projectColors) ? projectColors : {};
+  const n = String(projectName || '').trim();
+  if (typeof colorForProjectName === 'function') return colorForProjectName(n, map);
+  return stepzTokens.accent;
+}
+
 function taskTagColorPickerValue(cssColor) {
   if (typeof cssColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(cssColor.trim())) return cssColor.trim();
   return TASK_TAG_COLORS[0] || '#383838';
@@ -735,12 +743,16 @@ function App() {
       const removed = s.tasks.find(x => x.id === taskId);
       const tasks = s.tasks.filter(x => x.id !== taskId);
       let projectOrder = Array.isArray(s.projectOrder) ? s.projectOrder : [];
+      let projectColors = { ...(s.projectColors || {}) };
       if (removed) {
         const proj = ((removed.project || '').trim() || DEFAULT_PROJECT);
         const stillUsed = tasks.some(t => ((t.project || '').trim() || DEFAULT_PROJECT) === proj);
-        if (!stillUsed) projectOrder = projectOrder.filter(p => p !== proj);
+        if (!stillUsed) {
+          projectOrder = projectOrder.filter(p => p !== proj);
+          delete projectColors[proj];
+        }
       }
-      return { ...s, tasks, projectOrder };
+      return { ...s, tasks, projectOrder, projectColors };
     });
   };
 
@@ -899,6 +911,19 @@ function App() {
     });
   };
 
+  /** Define ou remove a cor manual de um projeto (afeta degraus e chips). `cssColor` null/'' volta ao automático. */
+  const setProjectColor = (projectName, cssColor) => {
+    const name = String(projectName || '').trim();
+    if (!name) return;
+    setState((s) => {
+      const next = { ...(s.projectColors || {}) };
+      const v = cssColor != null ? String(cssColor).trim() : '';
+      if (!v) delete next[name];
+      else next[name] = v;
+      return { ...s, projectColors: next };
+    });
+  };
+
   const renameProject = (fromProject, toProject) => {
     const from = (fromProject || '').trim();
     const to = (toProject || '').trim();
@@ -920,6 +945,14 @@ function App() {
           ? { ...t, project: to }
           : t)),
         projectOrder: nextOrder,
+        projectColors: (() => {
+          const pc = { ...(s.projectColors || {}) };
+          if (Object.prototype.hasOwnProperty.call(pc, from) && pc[from] != null && String(pc[from]).trim()) {
+            pc[to] = pc[from];
+            delete pc[from];
+          }
+          return pc;
+        })(),
       };
     });
   };
@@ -1263,6 +1296,7 @@ function App() {
             taskTagColors={taskTagColors}
             allKnownTaskTags={allKnownTaskTags}
             onSetTaskTagColor={setTaskTagColor}
+            onSetProjectColor={setProjectColor}
           />
         )}
         {tab === 'tasks' && (
@@ -1273,6 +1307,7 @@ function App() {
             taskTagColors={taskTagColors}
             allKnownTaskTags={allKnownTaskTags}
             onSetTaskTagColor={setTaskTagColor}
+            onSetProjectColor={setProjectColor}
             onMoveTask={moveTask}
             onMoveProject={moveProject} />
         )}
@@ -1317,6 +1352,7 @@ function App() {
           habits={state.habits}
           categories={state.categories}
           taskTagColors={taskTagColors}
+          projectColors={state.projectColors}
           onClose={() => setStepDetail(null)}
         />
       )}
@@ -1649,7 +1685,7 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
 
 function HomeView({ state, totalSteps, todaySteps, dayStreak,
   onCompleteTask, onUncompleteTask, onAddTask, onDeleteTask, onOpenCreateModal, onEditTask, onUpdateTask, onRenameProject, onToggleHabit, onEditHabit, onStepClick,
-  taskTagColors, allKnownTaskTags, onSetTaskTagColor }) {
+  taskTagColors, allKnownTaskTags, onSetTaskTagColor, onSetProjectColor }) {
   const { isMobile } = useStepzViewport();
   const [tagEditor, setTagEditor] = useState(null);
   const [priorityEditor, setPriorityEditor] = useState(null);
@@ -1676,6 +1712,7 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
           habits={state.habits}
           categories={state.categories}
           taskTagColors={taskTagColors}
+          projectColors={state.projectColors}
           onStepClick={onStepClick}
           layoutCompact={isMobile}
         />
@@ -1692,7 +1729,15 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
           {todayTasks.length === 0 ? (
             <Empty msg="Nenhuma task. Adicione uma acima." />
           ) : todayByProject.map(([project, tasks]) => (
-            <TaskProjectSection key={`today-${project}`} project={project} count={tasks.length} onRenameProject={onRenameProject} showTaskTableHeader>
+            <TaskProjectSection
+              key={`today-${project}`}
+              project={project}
+              count={tasks.length}
+              onRenameProject={onRenameProject}
+              showTaskTableHeader
+              projectAccentColor={stepzResolveProjectColor(project, state.projectColors)}
+              onSetProjectColor={typeof onSetProjectColor === 'function' ? (c) => onSetProjectColor(project, c) : undefined}
+            >
               {tasks.map(t => (
                 <TaskItem key={t.id} task={t}
                   taskTagColors={taskTagColors}
@@ -1756,7 +1801,7 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
   );
 }
 
-function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCreateModal, onEditTask, onRenameProject, onUpdateTask, onStepClick, taskTagColors, allKnownTaskTags, onSetTaskTagColor, onMoveTask, onMoveProject }) {
+function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCreateModal, onEditTask, onRenameProject, onUpdateTask, onStepClick, taskTagColors, allKnownTaskTags, onSetTaskTagColor, onSetProjectColor, onMoveTask, onMoveProject }) {
   const [tagEditor, setTagEditor] = useState(null);
   const [priorityEditor, setPriorityEditor] = useState(null);
   const [statusEditor, setStatusEditor] = useState(null);
@@ -1823,6 +1868,8 @@ function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCre
                 isProjectDragging={isThisProjectDragging}
                 dropBefore={dropBefore}
                 dropAfter={dropAfter}
+                projectAccentColor={stepzResolveProjectColor(project, state.projectColors)}
+                onSetProjectColor={typeof onSetProjectColor === 'function' ? (c) => onSetProjectColor(project, c) : undefined}
               >
                 <DraggableTaskGroup
                   tasks={openTasks}
@@ -3180,6 +3227,7 @@ function JourneyView({ state, totalSteps, currentLevel, onStepClick, taskTagColo
             habits={state.habits}
             categories={state.categories}
             taskTagColors={taskTagColors}
+            projectColors={state.projectColors}
             onStepClick={onStepClick}
             layoutCompact={isMobile}
           />
@@ -4690,7 +4738,117 @@ function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEd
   );
 }
 
-function TaskProjectSection({ project, count, children, onRenameProject, showTaskTableHeader, projectDragHandleProps, projectItemRef, isProjectDragging, dropBefore, dropAfter }) {
+function ProjectColorDotButton({ accent, isMobile, onPick }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => {
+      if (!wrapRef.current || wrapRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        type="button"
+        title="Cor do projeto"
+        aria-label="Cor do projeto"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: isMobile ? 30 : 28,
+          height: isMobile ? 30 : 28,
+          borderRadius: 8,
+          border: `1px solid ${stepzTokens.borderStrong}`,
+          background: stepzTokens.panel2,
+          cursor: 'pointer',
+          padding: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          touchAction: 'manipulation',
+        }}
+      >
+        <span style={{
+          width: isMobile ? 14 : 13,
+          height: isMobile ? 14 : 13,
+          borderRadius: 5,
+          background: accent,
+          boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.28)',
+        }} />
+      </button>
+      {open ? (
+        <div
+          role="listbox"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            right: 0,
+            zIndex: 40,
+            padding: 10,
+            background: stepzTokens.panel,
+            border: `1px solid ${stepzTokens.borderStrong}`,
+            borderRadius: 12,
+            boxShadow: '0 16px 40px rgba(0,0,0,0.45)',
+            minWidth: 200,
+          }}
+        >
+          <div style={{
+            fontSize: 10, fontWeight: 600, color: stepzTokens.textFaint,
+            textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8,
+          }}>Cor do projeto</div>
+          <button
+            type="button"
+            onClick={() => { onPick(null); setOpen(false); }}
+            style={{
+              width: '100%',
+              marginBottom: 10,
+              padding: '8px 10px',
+              borderRadius: 8,
+              border: `1px dashed ${stepzTokens.border}`,
+              background: 'transparent',
+              color: stepzTokens.textDim,
+              fontSize: 12,
+              cursor: 'pointer',
+              fontFamily: stepzTokens.font,
+            }}
+          >
+            Automático (paleta)
+          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+            {TASK_TAG_COLOR_OPTIONS.map((opt) => (
+              <button
+                key={opt.color}
+                type="button"
+                title={opt.label}
+                aria-label={opt.label}
+                onClick={() => { onPick(opt.color); setOpen(false); }}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  border: String(accent || '').toLowerCase() === opt.color.toLowerCase()
+                    ? `2px solid ${stepzTokens.highlight}`
+                    : '1px solid rgba(0,0,0,0.35)',
+                  background: opt.color,
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TaskProjectSection({ project, count, children, onRenameProject, showTaskTableHeader, projectDragHandleProps, projectItemRef, isProjectDragging, dropBefore, dropAfter, projectAccentColor, onSetProjectColor }) {
   const [open, setOpen] = useState(true);
   const [editing, setEditing] = useState(false);
   const [newName, setNewName] = useState(project);
@@ -4783,6 +4941,13 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
             }}>
               {count}
             </span>
+            {typeof onSetProjectColor === 'function' ? (
+              <ProjectColorDotButton
+                accent={projectAccentColor || stepzTokens.accent}
+                isMobile={isMobile}
+                onPick={onSetProjectColor}
+              />
+            ) : null}
           </>
         ) : (
           <>
@@ -4847,6 +5012,13 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
             }}>
               {count}
             </span>
+            {typeof onSetProjectColor === 'function' ? (
+              <ProjectColorDotButton
+                accent={projectAccentColor || stepzTokens.accent}
+                isMobile={isMobile}
+                onPick={onSetProjectColor}
+              />
+            ) : null}
           </>
         )}
       </div>
@@ -5639,6 +5811,7 @@ function StepDetailModal({
   habits = [],
   categories,
   taskTagColors = {},
+  projectColors = {},
 }) {
   useEffect(() => {
     const onKey = (e) => {
@@ -5652,12 +5825,25 @@ function StepDetailModal({
   const rich = enrichStepDetail(step, tasks, habits);
   const catMeta = habitCategoryMeta({ category: rich.category }, categories || []);
   const priMeta = TASK_PRIORITIES.find((p) => p.id === rich.priority);
-  const detailAccent = rich.goalColor || rich.stepPaletteColor || catMeta.color;
-  const detailChipLabel = rich.kind === 'goal'
-    ? (rich.goalColor ? goalPaletteLabel(rich.goalColor) : catMeta.label)
-    : rich.stepPaletteColor
-      ? goalPaletteLabel(rich.stepPaletteColor)
-      : catMeta.label;
+  /* Tasks: chip principal = projeto + cor do projeto (categorias antigas foram descontinuadas).
+     Hábitos e metas mantêm o chip da paleta/categoria existente. */
+  const isTaskStep = rich.kind === 'task';
+  const taskProjectName = isTaskStep ? (rich.project || '').trim() : '';
+  let detailAccent;
+  let detailChipLabel;
+  if (rich.kind === 'goal') {
+    detailAccent = rich.goalColor || catMeta.color;
+    detailChipLabel = rich.goalColor ? goalPaletteLabel(rich.goalColor) : catMeta.label;
+  } else if (isTaskStep && taskProjectName) {
+    detailAccent = stepzResolveProjectColor(taskProjectName, projectColors);
+    detailChipLabel = taskProjectName;
+  } else if (rich.stepPaletteColor) {
+    detailAccent = rich.stepPaletteColor;
+    detailChipLabel = goalPaletteLabel(rich.stepPaletteColor);
+  } else {
+    detailAccent = catMeta.color;
+    detailChipLabel = catMeta.label;
+  }
 
   const kindLabel = rich.kind === 'goal' ? 'Meta' : rich.kind === 'habit' ? 'Hábito' : rich.kind === 'task' ? 'Task' : '—';
 
@@ -5708,7 +5894,8 @@ function StepDetailModal({
             <span style={{
               fontSize: 11, fontWeight: 600, padding: '5px 11px', borderRadius: 999,
               color: '#fff', background: detailAccent,
-            }}>{detailChipLabel}</span>
+              maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }} title={detailChipLabel}>{detailChipLabel}</span>
             {rich.kind === 'goal' ? (
               <span style={{
                 fontSize: 11, color: stepzTokens.textDim,
@@ -5718,12 +5905,6 @@ function StepDetailModal({
             ) : null}
             {rich.kind === 'task' ? (
               <>
-                <span style={{
-                  fontSize: 11, color: stepzTokens.textDim,
-                  padding: '5px 11px', borderRadius: 999,
-                  border: `1px solid ${stepzTokens.border}`,
-                  maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }} title={rich.project}>Projeto: {rich.project}</span>
                 {rich.dueDate ? (
                   <span style={{
                     fontSize: 11, color: stepzTokens.textDim,
