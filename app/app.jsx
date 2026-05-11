@@ -93,6 +93,60 @@ function colorForTaskTag(tag, tagColors) {
   return TASK_TAG_COLORS[Math.abs(h) % TASK_TAG_COLORS.length];
 }
 
+/* =============================================================================
+ * Recorrência mensal de tasks.
+ * Schema (campos opcionais em cada task):
+ *   recurrence: 'monthly' | null
+ *   recurrenceIntervalDays: number (default 30)
+ *   recurrenceLeadDays: number (default 7)
+ *   recurrenceLastDoneAt: ISO string da última conclusão (gravado em complete/updateTask)
+ * Auto-reabertura preserva o degrau anterior; reabertura manual (uncomplete / updateTask
+ * ramo 'reopening') continua a remover o último degrau como antes.
+ * ============================================================================= */
+const RECURRING_DEFAULT_INTERVAL = 30;
+const RECURRING_DEFAULT_LEAD = 7;
+
+function isTaskRecurringMonthly(t) {
+  return !!(t && t.recurrence === 'monthly');
+}
+
+/** Timestamp (ms) em que a task deve auto-reabrir, ou null se não aplicável. */
+function computeRecurringReopenAt(t) {
+  if (!isTaskRecurringMonthly(t)) return null;
+  if (!t.recurrenceLastDoneAt) return null;
+  const last = Date.parse(t.recurrenceLastDoneAt);
+  if (!Number.isFinite(last)) return null;
+  const interval = Number.isFinite(t.recurrenceIntervalDays) && t.recurrenceIntervalDays > 0
+    ? t.recurrenceIntervalDays
+    : RECURRING_DEFAULT_INTERVAL;
+  const lead = Number.isFinite(t.recurrenceLeadDays) && t.recurrenceLeadDays >= 0
+    ? t.recurrenceLeadDays
+    : RECURRING_DEFAULT_LEAD;
+  const days = Math.max(0, interval - lead);
+  return last + days * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * Reabre todas as tasks recorrentes vencidas, preservando state.steps.
+ * Retorna { changed, nextTasks }. Não muta o argumento.
+ */
+function autoReopenRecurringDue(state, nowMs) {
+  if (!state || !Array.isArray(state.tasks) || state.tasks.length === 0) {
+    return { changed: false, nextTasks: state?.tasks || [] };
+  }
+  let changed = false;
+  const nextTasks = state.tasks.map((t) => {
+    if (!isTaskRecurringMonthly(t)) return t;
+    if (!t.done) return t;
+    const reopenAt = computeRecurringReopenAt(t);
+    if (reopenAt == null) return t;
+    if (nowMs < reopenAt) return t;
+    changed = true;
+    return { ...t, done: false, status: 'todo' };
+  });
+  return { changed, nextTasks };
+}
+
 /** Cor do projeto: override em `projectColors` ou paleta determinística (definida em stairs.jsx). */
 function stepzResolveProjectColor(projectName, projectColors) {
   const map = projectColors && typeof projectColors === 'object' && !Array.isArray(projectColors) ? projectColors : {};
@@ -662,6 +716,24 @@ function App() {
     };
   }, [state]);
 
+  // Auto-reabertura de tasks recorrentes mensais: boot, ao voltar à tab e a cada 5 min.
+  useEffect(() => {
+    if (!session) return undefined;
+    if (!activeUserKeyRef.current) return undefined;
+    const tick = () => setState((s) => {
+      const r = autoReopenRecurringDue(s, Date.now());
+      return r.changed ? { ...s, tasks: r.nextTasks } : s;
+    });
+    tick();
+    const onVis = () => { if (!document.hidden) tick(); };
+    document.addEventListener('visibilitychange', onVis);
+    const id = setInterval(tick, 5 * 60 * 1000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      clearInterval(id);
+    };
+  }, [session]);
+
   // ── Mutations ──
   const completeTask = (taskId) => {
     setState(s => {
@@ -688,9 +760,15 @@ function App() {
       } else {
         setCelebrate({ count: newCount, isLevel: false, brief: true });
       }
+      const nowIso = new Date().toISOString();
       return {
         ...s,
-        tasks: s.tasks.map(x => x.id === taskId ? { ...x, done: true, status: 'done' } : x),
+        tasks: s.tasks.map(x => {
+          if (x.id !== taskId) return x;
+          const patched = { ...x, done: true, status: 'done' };
+          if (isTaskRecurringMonthly(x)) patched.recurrenceLastDoneAt = nowIso;
+          return patched;
+        }),
         steps: newSteps,
       };
     });
@@ -725,14 +803,21 @@ function App() {
     const tags = isLegacy ? [] : input.tags;
     const description = isLegacy ? '' : input.description;
     const project = isLegacy ? DEFAULT_PROJECT : ((input.project || '').trim() || DEFAULT_PROJECT);
+    const recurrence = !isLegacy && input.recurrence === 'monthly' ? 'monthly' : null;
     setState(s => {
       const prevOrder = Array.isArray(s.projectOrder) ? s.projectOrder : [];
       const nextProjectOrder = prevOrder.includes(project) ? prevOrder : [...prevOrder, project];
+      const baseTask = {
+        id: cryptoId(), title, category, done: false, dueDate, status, priority, tags, description, project,
+      };
+      if (recurrence === 'monthly') {
+        baseTask.recurrence = 'monthly';
+        baseTask.recurrenceIntervalDays = RECURRING_DEFAULT_INTERVAL;
+        baseTask.recurrenceLeadDays = RECURRING_DEFAULT_LEAD;
+      }
       return {
         ...s,
-        tasks: [...s.tasks, {
-          id: cryptoId(), title, category, done: false, dueDate, status, priority, tags, description, project,
-        }],
+        tasks: [...s.tasks, baseTask],
         projectOrder: nextProjectOrder,
       };
     });
@@ -799,18 +884,20 @@ function App() {
       let celebration = null;
       if (completing) {
         const snapDesc = String(merged.description || '').trim();
+        const completedAt = new Date().toISOString();
         nextSteps = [...s.steps, {
           id: cryptoId(),
           taskId: merged.id,
           title: merged.title,
           project: ((merged.project || '').trim() || DEFAULT_PROJECT),
           category: merged.category,
-          completedAt: new Date().toISOString(),
+          completedAt,
           ...(snapDesc ? { description: snapDesc } : {}),
           ...(Array.isArray(merged.tags) && merged.tags.length ? { tags: [...merged.tags] } : {}),
           ...(merged.priority ? { priority: merged.priority } : {}),
           ...(merged.dueDate ? { dueDate: merged.dueDate } : {}),
         }];
+        if (isTaskRecurringMonthly(merged)) merged.recurrenceLastDoneAt = completedAt;
         const newCount = nextSteps.length;
         if (newCount % 10 === 0 || newCount % STEPS_PER_LEVEL === 0) {
           celebration = { count: newCount, isLevel: newCount % STEPS_PER_LEVEL === 0 };
@@ -1391,6 +1478,7 @@ function App() {
       )}
       {editingTask && (
         <TaskEditModal
+          key={editingTask.id}
           task={editingTask}
           projectOptions={projectOptions}
           onClose={() => setEditingTask(null)}
@@ -4547,20 +4635,53 @@ function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEd
           onClick={onEditTask ? (e) => { e.stopPropagation(); onEditTask(); } : undefined}
           title={task.title}
           style={{
-            fontSize: isMobile ? 11 : 12,
-            fontWeight: 600,
-            letterSpacing: -0.2,
-            color: task.done ? stepzTokens.textFaint : stepzTokens.text,
-            textDecoration: task.done ? 'line-through' : 'none',
-            textDecorationColor: 'rgba(232,232,234,0.25)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
             minWidth: 0,
             cursor: onEditTask ? 'pointer' : 'default',
           }}
         >
-          {task.title}
+          <span
+            style={{
+              fontSize: isMobile ? 11 : 12,
+              fontWeight: 600,
+              letterSpacing: -0.2,
+              color: task.done ? stepzTokens.textFaint : stepzTokens.text,
+              textDecoration: task.done ? 'line-through' : 'none',
+              textDecorationColor: 'rgba(232,232,234,0.25)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              minWidth: 0,
+              flexShrink: 1,
+            }}
+          >
+            {task.title}
+          </span>
+          {isTaskRecurringMonthly(task) && (
+            <span
+              title="Repete a cada 30 dias — reabre 7 dias antes"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+                padding: isMobile ? '1px 6px' : '2px 7px',
+                borderRadius: 999,
+                border: `1px solid ${stepzTokens.borderStrong}`,
+                background: 'rgba(212,175,55,0.08)',
+                color: stepzTokens.textDim,
+                fontSize: isMobile ? 8 : 9,
+                fontWeight: 600,
+                letterSpacing: 0.2,
+                flexShrink: 0,
+                lineHeight: 1,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              ↻ Mensal
+            </span>
+          )}
         </div>
 
         <div style={{ minWidth: 0 }} onClick={e => e.stopPropagation()}>
@@ -5323,6 +5444,39 @@ function HabitEditModal({ habit, categories, onClose, onSave }) {
   );
 }
 
+function RecurringMonthlyToggle({ checked, onChange }) {
+  return (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+        padding: '10px 12px',
+        borderRadius: 10,
+        border: `1px solid ${checked ? stepzTokens.accent : stepzTokens.borderStrong}`,
+        background: checked ? 'rgba(212,175,55,0.08)' : 'rgba(255,255,255,0.02)',
+        cursor: 'pointer',
+        transition: 'background 0.12s ease, border-color 0.12s ease',
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={!!checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ marginTop: 2, accentColor: stepzTokens.accent, cursor: 'pointer' }}
+      />
+      <span style={{ display: 'grid', gap: 2 }}>
+        <span style={{ fontSize: 13, color: stepzTokens.text, fontWeight: 600 }}>
+          ↻ Repete mensalmente
+        </span>
+        <span style={{ fontSize: 11, color: stepzTokens.textDim, lineHeight: 1.4 }}>
+          Reabre automaticamente 7 dias antes do próximo ciclo (a cada 30 dias). Os degraus anteriores são preservados.
+        </span>
+      </span>
+    </label>
+  );
+}
+
 function TaskCreateModal({ onClose, onCreate, projectOptions = [], taskTagColors = {}, allKnownTaskTags = [], onSetTaskTagColor }) {
   const hasExistingProjects = projectOptions.length > 0;
   const [title, setTitle] = useState('');
@@ -5335,6 +5489,7 @@ function TaskCreateModal({ onClose, onCreate, projectOptions = [], taskTagColors
   const [tags, setTags] = useState([]);
   const [tagPopoverAnchor, setTagPopoverAnchor] = useState(null);
   const [description, setDescription] = useState('');
+  const [recurringMonthly, setRecurringMonthly] = useState(false);
 
   const resolvedProject = (projectMode === 'existing'
     ? selectedProject
@@ -5348,6 +5503,9 @@ function TaskCreateModal({ onClose, onCreate, projectOptions = [], taskTagColors
       status, priority, dueDate, tags: tags.slice(0, 6),
       project: resolvedProject,
       description: description.trim(),
+      recurrence: recurringMonthly ? 'monthly' : null,
+      recurrenceIntervalDays: recurringMonthly ? RECURRING_DEFAULT_INTERVAL : null,
+      recurrenceLeadDays: recurringMonthly ? RECURRING_DEFAULT_LEAD : null,
     });
   };
 
@@ -5482,6 +5640,8 @@ function TaskCreateModal({ onClose, onCreate, projectOptions = [], taskTagColors
           <textarea value={description} onChange={e => setDescription(e.target.value)}
             placeholder="Descricao da task"
             style={{ ...modalInputStyle, minHeight: 92, resize: 'vertical' }} />
+
+          <RecurringMonthlyToggle checked={recurringMonthly} onChange={setRecurringMonthly} />
         </div>
 
         {tagPopoverAnchor && (
@@ -5512,11 +5672,16 @@ function TaskEditModal({ task, onClose, onSave, projectOptions = [] }) {
   const [status, setStatus] = useState(task?.status || TASK_STATUS[0].id);
   const [priority, setPriority] = useState(task?.priority || TASK_PRIORITIES[1].id);
   const [projectMode, setProjectMode] = useState(projectOptions.includes(normalizedProject) ? 'existing' : 'new');
-  const [selectedProject, setSelectedProject] = useState(projectOptions[0] || normalizedProject);
+  const [selectedProject, setSelectedProject] = useState(
+    projectOptions.includes(normalizedProject)
+      ? normalizedProject
+      : (projectOptions[0] || normalizedProject),
+  );
   const [newProject, setNewProject] = useState(normalizedProject);
   const [dueDate, setDueDate] = useState(task?.dueDate || todayStr());
   const [tagsInput, setTagsInput] = useState((task?.tags || []).join(', '));
   const [description, setDescription] = useState(task?.description || '');
+  const [recurringMonthly, setRecurringMonthly] = useState(isTaskRecurringMonthly(task));
 
   const resolvedProject = (projectMode === 'existing' ? selectedProject : newProject).trim() || DEFAULT_PROJECT;
   const submit = () => {
@@ -5528,6 +5693,9 @@ function TaskEditModal({ task, onClose, onSave, projectOptions = [] }) {
       status, priority, dueDate, tags,
       project: resolvedProject,
       description: description.trim(),
+      recurrence: recurringMonthly ? 'monthly' : null,
+      recurrenceIntervalDays: recurringMonthly ? RECURRING_DEFAULT_INTERVAL : null,
+      recurrenceLeadDays: recurringMonthly ? RECURRING_DEFAULT_LEAD : null,
     });
   };
 
@@ -5596,6 +5764,8 @@ function TaskEditModal({ task, onClose, onSave, projectOptions = [] }) {
           <textarea value={description} onChange={e => setDescription(e.target.value)}
             placeholder="Descricao da task"
             style={{ ...modalInputStyle, minHeight: 92, resize: 'vertical' }} />
+
+          <RecurringMonthlyToggle checked={recurringMonthly} onChange={setRecurringMonthly} />
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
