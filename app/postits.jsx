@@ -1,5 +1,6 @@
 // Post-its board — Notion-style sticky-note canvas with sidebar tags.
 // Each note has: id, title, color (theme), tag, items[], comments?[], createdAt, updatedAt
+// Optional: widthPx, minHeightPx (px); columnSpan (1–3, só desktop) — largura de 2–3 post-its em grelha.
 // comments[]: { id, itemId, preview, body, createdAt, updatedAt }
 // Each item has: id, text (plain fallback), html? (rich content), link?, sub[], highlight?
 
@@ -122,6 +123,25 @@ const POSTIT_TAGS = [
 
 /** Mesmo breakpoint que app.jsx (768) — Post-its é ficheiro à parte, sem contexto partilhado. */
 const STEPZ_POSTITS_MOBILE_MAX = 768;
+
+/** Limites ao redimensionar cartões (px). `widthPx` / `minHeightPx` / `columnSpan` são opcionais em cada post-it. */
+const POSTIT_CARD_WIDTH_MIN = 200;
+const POSTIT_CARD_WIDTH_MAX = 560;
+const POSTIT_CARD_HEIGHT_MIN = 110;
+const POSTIT_CARD_HEIGHT_MAX = 780;
+
+const POSTIT_BOARD_DESKTOP_COLUMNS = 3;
+const POSTIT_BOARD_GRID_GAP = 16;
+
+/** Largura em colunas (1–3) a partir da largura desejada e da largura útil do quadro (3 colunas + gaps). */
+function computePostitColumnSpanFromWidth(boardInnerPx, draggedWidthPx) {
+  const cols = POSTIT_BOARD_DESKTOP_COLUMNS;
+  const gap = POSTIT_BOARD_GRID_GAP;
+  const colUnit = (boardInnerPx - (cols - 1) * gap) / cols;
+  if (!Number.isFinite(boardInnerPx) || boardInnerPx <= 0 || colUnit <= 0) return 1;
+  const spanFloat = (draggedWidthPx + gap) / (colUnit + gap);
+  return Math.min(cols, Math.max(1, Math.round(spanFloat)));
+}
 
 function useStepzPostitsNarrow() {
   const [narrow, setNarrow] = React.useState(() => typeof window !== 'undefined' && window.innerWidth <= STEPZ_POSTITS_MOBILE_MAX);
@@ -351,10 +371,19 @@ function PostitsView({ state, setState, onMovePostit }) {
             }}>criar o primeiro</button>
           </div>
         ) : (
-          <div style={{
-            columnCount: narrow ? 1 : 3,
-            columnGap: 16,
-          }} className="postit-masonry">
+          <div
+            data-postit-board
+            className="postit-masonry"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: narrow
+                ? 'minmax(0, 1fr)'
+                : `repeat(${POSTIT_BOARD_DESKTOP_COLUMNS}, minmax(0, 1fr))`,
+              gap: POSTIT_BOARD_GRID_GAP,
+              alignItems: 'start',
+              overflow: 'visible',
+            }}
+          >
             {filtered.map((p, idx) => {
               const isDragging = !!(masonryDrag.drag && masonryDrag.drag.fromIdx === idx);
               return (
@@ -565,6 +594,126 @@ function PostitCard({ postit, isEditing, onEdit, onBlur, onChange, onDelete, set
   const tag = POSTIT_TAGS.find(t => t.id === postit.tag);
   const [showColors, setShowColors] = React.useState(false);
   const [cardHover, setCardHover] = React.useState(false);
+  /** Durante resize: posição do ponteiro + deltas para feedback “→ direita / ↓ baixo”. */
+  const [resizeHud, setResizeHud] = React.useState(null);
+  const cardElRef = React.useRef(null);
+  const itemsWrapRef = React.useRef(null);
+  const resizeDragActiveRef = React.useRef(false);
+
+  const setCardRef = React.useCallback((el) => {
+    cardElRef.current = el;
+    if (typeof setItemRef === 'function') setItemRef(el);
+  }, [setItemRef]);
+
+  const hasFixedHeight = !!(postit.minHeightPx && postit.minHeightPx > 0);
+  const widthPx = Number(postit.widthPx) > 0 ? Math.round(Number(postit.widthPx)) : null;
+  const minHeightPx = Number(postit.minHeightPx) > 0 ? Math.round(Number(postit.minHeightPx)) : null;
+  const rawSpan = Number(postit.columnSpan);
+  const storedSpan = Number.isFinite(rawSpan) && rawSpan > 0 ? Math.floor(rawSpan) : 1;
+  const columnSpan = narrow ? 1 : Math.min(POSTIT_BOARD_DESKTOP_COLUMNS, Math.max(1, storedSpan));
+  const spansMultiple = !narrow && columnSpan > 1;
+
+  const onResizePointerDown = React.useCallback((e) => {
+    if (e.button !== 0) return;
+    if (e.altKey) {
+      e.stopPropagation();
+      e.preventDefault();
+      onChange({ widthPx: undefined, minHeightPx: undefined, columnSpan: undefined });
+      return;
+    }
+    e.stopPropagation();
+    e.preventDefault();
+    const el = cardElRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = rect.width;
+    const startH = rect.height;
+    const target = e.currentTarget;
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch (_) { /* ignore */ }
+
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    let lastW = startW;
+    let lastH = startH;
+    setResizeHud({
+      w: Math.round(startW),
+      h: Math.round(startH),
+      dW: 0,
+      dH: 0,
+      x: startX,
+      y: startY,
+    });
+    resizeDragActiveRef.current = true;
+
+    const onMove = (ev) => {
+      if (!cardElRef.current) return;
+      const wrap = itemsWrapRef.current;
+      if (wrap) {
+        wrap.style.flex = '1';
+        wrap.style.minHeight = '0';
+        wrap.style.overflowY = 'auto';
+      }
+      const dw = ev.clientX - startX;
+      const dh = ev.clientY - startY;
+      const board = cardElRef.current.closest('[data-postit-board]');
+      let colMax = POSTIT_CARD_WIDTH_MAX;
+      if (board) {
+        colMax = Math.max(POSTIT_CARD_WIDTH_MIN, board.getBoundingClientRect().width);
+      } else if (typeof window !== 'undefined') {
+        colMax = Math.min(POSTIT_CARD_WIDTH_MAX, Math.max(POSTIT_CARD_WIDTH_MIN, window.innerWidth - 48));
+      }
+      const w = clamp(startW + dw, POSTIT_CARD_WIDTH_MIN, colMax);
+      const h = clamp(startH + dh, POSTIT_CARD_HEIGHT_MIN, POSTIT_CARD_HEIGHT_MAX);
+      lastW = w;
+      lastH = h;
+      setResizeHud({
+        w: Math.round(w),
+        h: Math.round(h),
+        dW: Math.round(w - startW),
+        dH: Math.round(h - startH),
+        x: ev.clientX,
+        y: ev.clientY,
+      });
+    };
+
+    const onUp = (ev) => {
+      resizeDragActiveRef.current = false;
+      setResizeHud(null);
+      try {
+        target.releasePointerCapture(ev.pointerId);
+      } catch (_) { /* ignore */ }
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      const wrap = itemsWrapRef.current;
+      if (wrap) {
+        wrap.style.flex = '';
+        wrap.style.minHeight = '';
+        wrap.style.overflowY = '';
+      }
+      const boardEl = cardElRef.current?.closest('[data-postit-board]');
+      const boardInner = boardEl ? boardEl.getBoundingClientRect().width : lastW;
+      if (narrow) {
+        onChange({
+          widthPx: Math.round(lastW),
+          minHeightPx: Math.round(lastH),
+        });
+      } else {
+        const nextSpan = computePostitColumnSpanFromWidth(boardInner, lastW);
+        const patch = { minHeightPx: Math.round(lastH), columnSpan: nextSpan };
+        if (nextSpan > 1) patch.widthPx = undefined;
+        else patch.widthPx = Math.round(lastW);
+        onChange(patch);
+      }
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  }, [narrow, onChange]);
 
   const updateItem = (itemId, patch) => {
     onChange({ items: postit.items.map(it => it.id === itemId ? { ...it, ...patch } : it) });
@@ -576,87 +725,234 @@ function PostitCard({ postit, isEditing, onEdit, onBlur, onChange, onDelete, set
     onChange({ items: postit.items.filter(it => it.id !== itemId) });
   };
 
+  const resizeHudLabel = resizeHud
+    ? (() => {
+        const { dW, dH } = resizeHud;
+        const horiz = dW === 0
+          ? 'largura —'
+          : dW > 0
+            ? `→ direita +${dW} px`
+            : `← esquerda ${dW} px`;
+        const vert = dH === 0
+          ? 'altura —'
+          : dH > 0
+            ? `↓ baixo +${dH} px`
+            : `↑ cima ${dH} px`;
+        return `${horiz} · ${vert}`;
+      })()
+    : '';
+
   return (
+    <>
     <div
-      ref={setItemRef || undefined}
+      data-postit-card
+      ref={setCardRef}
       style={{
-        breakInside: 'avoid',
-        marginBottom: 16,
+        gridColumn: narrow ? 'span 1' : `span ${columnSpan}`,
         background: color.bg,
         border: `1px solid ${color.border}`,
         borderRadius: 10,
-        padding: '12px 14px 14px',
+        padding: '12px 14px 26px',
         position: 'relative',
-        transition: 'transform .12s, box-shadow .12s, opacity .12s',
+        boxSizing: 'border-box',
+        width: resizeHud
+          ? `${resizeHud.w}px`
+          : (spansMultiple ? '100%' : (widthPx ? `${widthPx}px` : '100%')),
+        maxWidth: resizeHud ? 'none' : '100%',
+        minWidth: resizeHud ? 0 : undefined,
+        justifySelf: resizeHud
+          ? 'start'
+          : (spansMultiple || !widthPx ? 'stretch' : 'start'),
+        minHeight: resizeHud
+          ? `${resizeHud.h}px`
+          : (minHeightPx ? `${minHeightPx}px` : undefined),
+        zIndex: resizeHud ? 40 : undefined,
+        boxShadow: resizeHud ? '0 20px 50px rgba(0,0,0,0.55)' : undefined,
+        display: 'flex',
+        flexDirection: 'column',
+        transition: resizeHud ? 'none' : 'transform .12s, box-shadow .12s, opacity .12s',
         opacity: isDragging ? 0.55 : 1,
         transform: isDragging ? 'scale(0.985)' : 'none',
+        outline: resizeHud ? `2px solid ${color.accent}` : undefined,
+        outlineOffset: resizeHud ? 0 : undefined,
       }}
       onMouseEnter={(e) => {
         setCardHover(true);
-        e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.3)';
+        if (!resizeDragActiveRef.current) {
+          e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.3)';
+        }
         const ctrl = e.currentTarget.querySelector('[data-controls]');
         if (ctrl) ctrl.style.opacity = 1;
       }}
       onMouseLeave={(e) => {
         setCardHover(false);
-        e.currentTarget.style.boxShadow = 'none';
+        if (!resizeDragActiveRef.current) {
+          e.currentTarget.style.boxShadow = 'none';
+        }
         const ctrl = e.currentTarget.querySelector('[data-controls]');
         if (ctrl) ctrl.style.opacity = 0;
       }}
     >
-      {/* Header: drag handle (opcional) + tag icon + title */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        {dragHandleProps ? (
-          <button
-            type="button"
-            {...dragHandleProps}
-            aria-label="Arrastar para reordenar"
-            title="Arrastar para reordenar"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              padding: 0,
-              width: 28,
-              height: 28,
-              marginLeft: -8,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: isDragging ? 'grabbing' : 'grab',
-              color: color.accent,
-              touchAction: 'none',
-              opacity: isDragging ? 1 : (narrow ? 0.65 : (cardHover ? 0.7 : 0.2)),
-              transition: 'opacity 120ms ease',
-              flexShrink: 0,
-            }}
-          >
-            <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true" focusable="false">
-              <circle cx="2" cy="2" r="1.2" fill="currentColor" />
-              <circle cx="8" cy="2" r="1.2" fill="currentColor" />
-              <circle cx="2" cy="7" r="1.2" fill="currentColor" />
-              <circle cx="8" cy="7" r="1.2" fill="currentColor" />
-              <circle cx="2" cy="12" r="1.2" fill="currentColor" />
-              <circle cx="8" cy="12" r="1.2" fill="currentColor" />
-            </svg>
-          </button>
-        ) : null}
-        <span style={{ fontSize: 13, color: color.accent, opacity: 0.9 }}>{tag?.icon || '◉'}</span>
+      {resizeHud ? (
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            ...(resizeHud.dW >= 0
+              ? { right: 0, borderRadius: '3px 0 0 3px', boxShadow: `-2px 0 14px rgba(255,255,255,0.12)` }
+              : { left: 0, borderRadius: '0 3px 3px 0', boxShadow: `2px 0 14px rgba(255,255,255,0.12)` }),
+            top: 6,
+            bottom: 30,
+            width: 5,
+            background: color.accent,
+            opacity: 0.9,
+            pointerEvents: 'none',
+            zIndex: 7,
+          }}
+        />
+      ) : null}
+      {/* Cabeçalho em duas linhas: (1) arrastar + tag + tipo/cor/apagar (2) título em largura total */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        marginBottom: 10,
+        flexShrink: 0,
+        minWidth: 0,
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          minWidth: 0,
+          flexWrap: 'wrap',
+        }}>
+          {dragHandleProps ? (
+            <button
+              type="button"
+              {...dragHandleProps}
+              aria-label="Arrastar para reordenar"
+              title="Arrastar para reordenar"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                width: 28,
+                height: 28,
+                marginLeft: -8,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: isDragging ? 'grabbing' : 'grab',
+                color: color.accent,
+                touchAction: 'none',
+                opacity: isDragging ? 1 : (narrow ? 0.65 : (cardHover ? 0.7 : 0.2)),
+                transition: 'opacity 120ms ease',
+                flexShrink: 0,
+              }}
+            >
+              <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true" focusable="false">
+                <circle cx="2" cy="2" r="1.2" fill="currentColor" />
+                <circle cx="8" cy="2" r="1.2" fill="currentColor" />
+                <circle cx="2" cy="7" r="1.2" fill="currentColor" />
+                <circle cx="8" cy="7" r="1.2" fill="currentColor" />
+                <circle cx="2" cy="12" r="1.2" fill="currentColor" />
+                <circle cx="8" cy="12" r="1.2" fill="currentColor" />
+              </svg>
+            </button>
+          ) : null}
+          <span style={{ fontSize: 13, color: color.accent, opacity: 0.9, flexShrink: 0 }}>{tag?.icon || '◉'}</span>
+          <div data-controls style={{
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: 4,
+            flexShrink: 0,
+            flexWrap: 'wrap',
+            minWidth: 0,
+            maxWidth: '100%',
+            marginLeft: 'auto',
+            opacity: 0,
+            transition: 'opacity .15s',
+          }}>
+            <select value={postit.tag} onChange={e => onChange({ tag: e.target.value })}
+              style={{
+                maxWidth: narrow ? 120 : 160,
+                minWidth: 0,
+                background: 'rgba(0,0,0,0.3)', border: `1px solid ${color.border}`,
+                color: color.accent, fontSize: 10, padding: '2px 4px', borderRadius: 4,
+                fontFamily: stepzTokens.font, outline: 'none', cursor: 'pointer',
+              }}>
+              {POSTIT_TAGS.map(t => <option key={t.id} value={t.id} style={{ color: '#000', background: '#fff' }}>{t.label}</option>)}
+            </select>
+            <button type="button" onClick={() => setShowColors(!showColors)}
+              style={{
+                width: 18, height: 18, borderRadius: 9,
+                background: color.accent, border: '1px solid rgba(0,0,0,0.3)',
+                cursor: 'pointer', padding: 0, flexShrink: 0,
+              }}/>
+            {showColors && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: 4,
+                zIndex: 12,
+                background: '#1a1a20', border: `1px solid ${stepzTokens.borderStrong}`,
+                borderRadius: 6, padding: 6, display: 'flex', gap: 4,
+                flexWrap: 'wrap',
+                maxWidth: 'min(220px, calc(100vw - 24px))',
+              }}>
+                {POSTIT_COLORS.map(c => (
+                  <button key={c.id} type="button" onClick={() => { onChange({ color: c.id }); setShowColors(false); }}
+                    style={{
+                      width: 18, height: 18, borderRadius: 9,
+                      background: c.accent, border: c.id === postit.color ? '2px solid #fff' : '1px solid rgba(0,0,0,0.3)',
+                      cursor: 'pointer', padding: 0,
+                    }}/>
+                ))}
+              </div>
+            )}
+            <button type="button" onClick={onDelete} title="Apagar"
+              style={{
+                background: 'rgba(0,0,0,0.3)', border: `1px solid ${color.border}`,
+                color: color.accent, fontSize: 12, width: 18, height: 18, borderRadius: 4,
+                cursor: 'pointer', padding: 0, lineHeight: 1, flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>×</button>
+          </div>
+        </div>
         <input
           value={postit.title}
           onChange={e => onChange({ title: e.target.value })}
           onFocus={onEdit}
           placeholder="Título"
           style={{
-            flex: 1, background: 'transparent', border: 'none',
-            color: color.accent, fontWeight: 600, fontSize: 14,
+            width: '100%',
+            minWidth: 0,
+            boxSizing: 'border-box',
+            background: 'transparent', border: 'none',
+            color: color.accent, fontWeight: 600, fontSize: 15,
             fontFamily: stepzTokens.font, outline: 'none', padding: 0,
             letterSpacing: -0.2,
+            lineHeight: 1.25,
           }}
         />
       </div>
 
       {/* Items */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div
+        ref={itemsWrapRef}
+        style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+        flex: hasFixedHeight ? 1 : undefined,
+        minHeight: hasFixedHeight ? 0 : undefined,
+        overflowY: hasFixedHeight ? 'auto' : undefined,
+        WebkitOverflowScrolling: 'touch',
+      }}>
         {postit.items.map(it => (
           <PostitItem
             key={it.id}
@@ -686,60 +982,79 @@ function PostitCard({ postit, isEditing, onEdit, onBlur, onChange, onDelete, set
           marginTop: 8, background: 'transparent', border: 'none',
           color: color.accent, opacity: 0.55, fontSize: 11,
           cursor: 'pointer', padding: '2px 0', fontFamily: stepzTokens.font,
+          flexShrink: 0,
         }}
         onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
         onMouseLeave={(e) => e.currentTarget.style.opacity = 0.55}>
         + item
       </button>
 
-      {/* Controls (visible on hover) */}
-      <div data-controls style={{
-        position: 'absolute', top: 8, right: 8,
-        display: 'flex', gap: 4,
-        opacity: 0, transition: 'opacity .15s',
-      }}>
-        {/* Tag selector */}
-        <select value={postit.tag} onChange={e => onChange({ tag: e.target.value })}
-          style={{
-            background: 'rgba(0,0,0,0.3)', border: `1px solid ${color.border}`,
-            color: color.accent, fontSize: 10, padding: '2px 4px', borderRadius: 4,
-            fontFamily: stepzTokens.font, outline: 'none', cursor: 'pointer',
-          }}>
-          {POSTIT_TAGS.map(t => <option key={t.id} value={t.id} style={{ color: '#000', background: '#fff' }}>{t.label}</option>)}
-        </select>
-        {/* Color swatches */}
-        <button onClick={() => setShowColors(!showColors)}
-          style={{
-            width: 18, height: 18, borderRadius: 9,
-            background: color.accent, border: '1px solid rgba(0,0,0,0.3)',
-            cursor: 'pointer', padding: 0,
-          }}/>
-        {showColors && (
-          <div style={{
-            position: 'absolute', top: 24, right: 0, zIndex: 5,
-            background: '#1a1a20', border: `1px solid ${stepzTokens.borderStrong}`,
-            borderRadius: 6, padding: 6, display: 'flex', gap: 4,
-          }}>
-            {POSTIT_COLORS.map(c => (
-              <button key={c.id} onClick={() => { onChange({ color: c.id }); setShowColors(false); }}
-                style={{
-                  width: 18, height: 18, borderRadius: 9,
-                  background: c.accent, border: c.id === postit.color ? '2px solid #fff' : '1px solid rgba(0,0,0,0.3)',
-                  cursor: 'pointer', padding: 0,
-                }}/>
-            ))}
-          </div>
-        )}
-        {/* Delete */}
-        <button onClick={onDelete} title="Apagar"
-          style={{
-            background: 'rgba(0,0,0,0.3)', border: `1px solid ${color.border}`,
-            color: color.accent, fontSize: 12, width: 18, height: 18, borderRadius: 4,
-            cursor: 'pointer', padding: 0, lineHeight: 1,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>×</button>
-      </div>
+      {/* Redimensionar (canto inferior direito) */}
+      <button
+        type="button"
+        aria-label="Redimensionar post-it"
+        title="Arraste para alterar largura e altura (desktop: até 3 colunas). Alt+clique para tamanho automático."
+        onPointerDown={onResizePointerDown}
+        style={{
+          position: 'absolute',
+          right: 2,
+          bottom: 2,
+          width: 22,
+          height: 22,
+          padding: 0,
+          border: 'none',
+          borderRadius: 6,
+          cursor: 'nwse-resize',
+          touchAction: 'none',
+          zIndex: 8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: cardHover ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.2)',
+          color: color.accent,
+          opacity: narrow ? 0.85 : (cardHover ? 1 : 0.45),
+          transition: 'opacity 0.15s ease, background 0.15s ease',
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+          <path d="M11 1v4h-1V3.4L3.4 10H5v1H1V7h1v1.6L8.6 2H7V1h4z" fill="currentColor" opacity="0.9" />
+        </svg>
+      </button>
     </div>
+    {resizeHud ? (
+      <div
+        role="status"
+        aria-live="polite"
+        aria-label={resizeHudLabel}
+        style={{
+          position: 'fixed',
+          left: Math.max(8, Math.min((typeof window !== 'undefined' ? window.innerWidth : 800) - 200, resizeHud.x + 12)),
+          top: Math.max(8, resizeHud.y + 12),
+          zIndex: 10050,
+          maxWidth: 220,
+          padding: '6px 10px',
+          borderRadius: 8,
+          fontSize: 12,
+          fontWeight: 600,
+          fontFamily: stepzTokens.font,
+          lineHeight: 1.35,
+          color: stepzTokens.text,
+          background: 'rgba(12,12,16,0.94)',
+          border: `1px solid ${stepzTokens.borderStrong}`,
+          boxShadow: '0 8px 28px rgba(0,0,0,0.45)',
+          pointerEvents: 'none',
+        }}
+      >
+        <div style={{ fontSize: 10, color: stepzTokens.textFaint, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>
+          Redimensionar
+        </div>
+        <div>{resizeHudLabel}</div>
+        <div style={{ marginTop: 4, fontSize: 11, color: stepzTokens.textDim, fontFamily: stepzTokens.fontMono }}>
+          {resizeHud.w}×{resizeHud.h} px
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
 
