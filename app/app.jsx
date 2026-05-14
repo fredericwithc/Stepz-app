@@ -5588,25 +5588,28 @@ function TaskCreateModal({ onClose, onCreate, projectOptions = [], taskTagColors
   const [status, setStatus] = useState(TASK_STATUS[0].id);
   const [priority, setPriority] = useState(TASK_PRIORITIES[1].id);
   const [projectMode, setProjectMode] = useState(hasExistingProjects ? 'existing' : 'new');
-  const [selectedProject, setSelectedProject] = useState(projectOptions[0] || DEFAULT_PROJECT);
+  const [selectedProject, setSelectedProject] = useState('');
   const [newProject, setNewProject] = useState('');
   const [dueDate, setDueDate] = useState(todayStr());
   const [tags, setTags] = useState([]);
   const [tagPopoverAnchor, setTagPopoverAnchor] = useState(null);
   const [description, setDescription] = useState('');
   const [recurringMonthly, setRecurringMonthly] = useState(false);
-
-  const resolvedProject = (projectMode === 'existing'
-    ? selectedProject
-    : newProject).trim() || DEFAULT_PROJECT;
+  const [projectError, setProjectError] = useState('');
 
   const submit = () => {
     if (!title.trim()) return;
+    const projectTrim = (projectMode === 'existing' ? selectedProject : newProject).trim();
+    if (!projectTrim) {
+      setProjectError('Informe o projeto da task.');
+      return;
+    }
+    setProjectError('');
     onCreate({
       title: title.trim(),
       category: defaultTaskCategoryId(),
       status, priority, dueDate, tags: tags.slice(0, 6),
-      project: resolvedProject,
+      project: projectTrim,
       description: description.trim(),
       recurrence: recurringMonthly ? 'monthly' : null,
       recurrenceIntervalDays: recurringMonthly ? RECURRING_DEFAULT_INTERVAL : null,
@@ -5650,19 +5653,22 @@ function TaskCreateModal({ onClose, onCreate, projectOptions = [], taskTagColors
             <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={modalInputStyle} />
           </div>
 
-          <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: stepzTokens.textDim, letterSpacing: 0.3 }}>
+              Projeto <span style={{ color: stepzTokens.accent }}>*</span>
+            </div>
             {hasExistingProjects && (
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   type="button"
-                  onClick={() => setProjectMode('existing')}
+                  onClick={() => { setProjectMode('existing'); setProjectError(''); }}
                   style={projectMode === 'existing' ? modalChipActiveStyle : modalChipStyle}
                 >
                   Projeto existente
                 </button>
                 <button
                   type="button"
-                  onClick={() => setProjectMode('new')}
+                  onClick={() => { setProjectMode('new'); setProjectError(''); }}
                   style={projectMode === 'new' ? modalChipActiveStyle : modalChipStyle}
                 >
                   Novo projeto
@@ -5672,9 +5678,12 @@ function TaskCreateModal({ onClose, onCreate, projectOptions = [], taskTagColors
             {(projectMode === 'existing' && hasExistingProjects) ? (
               <select
                 value={selectedProject}
-                onChange={e => setSelectedProject(e.target.value)}
+                onChange={e => { setSelectedProject(e.target.value); setProjectError(''); }}
                 style={modalInputStyle}
               >
+                <option value="" disabled style={{ color: '#000', background: '#fff' }}>
+                  Selecione um projeto
+                </option>
                 {projectOptions.map((projectName) => (
                   <option key={projectName} value={projectName} style={{ color: '#000', background: '#fff' }}>
                     {projectName}
@@ -5684,11 +5693,14 @@ function TaskCreateModal({ onClose, onCreate, projectOptions = [], taskTagColors
             ) : (
               <input
                 value={newProject}
-                onChange={e => setNewProject(e.target.value)}
-                placeholder="Novo projeto (ex: Trabalho, Vida pessoal, Mae)"
+                onChange={e => { setNewProject(e.target.value); setProjectError(''); }}
+                placeholder="Nome do projeto (obrigatório)"
                 style={modalInputStyle}
               />
             )}
+            {projectError ? (
+              <div style={{ fontSize: 12, color: '#f87171', lineHeight: 1.35 }}>{projectError}</div>
+            ) : null}
           </div>
 
           <button
