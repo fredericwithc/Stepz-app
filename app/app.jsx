@@ -804,20 +804,57 @@ function App() {
     const description = isLegacy ? '' : input.description;
     const project = isLegacy ? DEFAULT_PROJECT : ((input.project || '').trim() || DEFAULT_PROJECT);
     const recurrence = !isLegacy && input.recurrence === 'monthly' ? 'monthly' : null;
+    const doneOnCreate = !isLegacy && status === 'done';
+    const statusStored = normalizeTaskStatus(status, doneOnCreate);
     setState(s => {
       const prevOrder = Array.isArray(s.projectOrder) ? s.projectOrder : [];
       const nextProjectOrder = prevOrder.includes(project) ? prevOrder : [...prevOrder, project];
+      const taskId = cryptoId();
       const baseTask = {
-        id: cryptoId(), title, category, done: false, dueDate, status, priority, tags, description, project,
+        id: taskId,
+        title,
+        category,
+        done: doneOnCreate,
+        dueDate,
+        status: statusStored,
+        priority,
+        tags,
+        description,
+        project,
       };
       if (recurrence === 'monthly') {
         baseTask.recurrence = 'monthly';
         baseTask.recurrenceIntervalDays = RECURRING_DEFAULT_INTERVAL;
         baseTask.recurrenceLeadDays = RECURRING_DEFAULT_LEAD;
+        if (doneOnCreate) baseTask.recurrenceLastDoneAt = new Date().toISOString();
+      }
+      let nextSteps = s.steps;
+      if (doneOnCreate) {
+        const snapDesc = String(description || '').trim();
+        const newStep = {
+          id: cryptoId(),
+          taskId,
+          title,
+          project,
+          category,
+          completedAt: new Date().toISOString(),
+          ...(snapDesc ? { description: snapDesc } : {}),
+          ...(Array.isArray(tags) && tags.length ? { tags: [...tags] } : {}),
+          ...(priority ? { priority } : {}),
+          ...(dueDate ? { dueDate } : {}),
+        };
+        nextSteps = [...s.steps, newStep];
+        const newCount = nextSteps.length;
+        if (newCount % 10 === 0 || newCount % STEPS_PER_LEVEL === 0) {
+          setCelebrate({ count: newCount, isLevel: newCount % STEPS_PER_LEVEL === 0 });
+        } else {
+          setCelebrate({ count: newCount, isLevel: false, brief: true });
+        }
       }
       return {
         ...s,
         tasks: [...s.tasks, baseTask],
+        steps: nextSteps,
         projectOrder: nextProjectOrder,
       };
     });
