@@ -878,6 +878,27 @@ function App() {
     });
   };
 
+  /** Remove um degrau de task concluída (histórico "Concluídas") e o registro correspondente na escada. */
+  const deleteTaskCompletionStep = (ref) => {
+    setState((s) => {
+      let removeIdx = -1;
+      if (ref && ref.id) removeIdx = s.steps.findIndex((st) => st.id === ref.id);
+      if ((removeIdx < 0 || removeIdx >= s.steps.length) && ref && typeof ref.stepIndex === 'number') {
+        removeIdx = ref.stepIndex;
+      }
+      if (removeIdx < 0 || removeIdx >= s.steps.length) return s;
+      queueMicrotask(() => {
+        setStepDetail((cur) => {
+          if (cur == null) return null;
+          if (cur === removeIdx) return null;
+          if (cur > removeIdx) return cur - 1;
+          return cur;
+        });
+      });
+      return { ...s, steps: s.steps.filter((_, i) => i !== removeIdx) };
+    });
+  };
+
   const updateTask = (taskId, patch) => {
     setState((s) => {
       const t = s.tasks.find(x => x.id === taskId);
@@ -1437,6 +1458,7 @@ function App() {
             onAdd={addTask} onDelete={deleteTask} onOpenCreateModal={() => setTaskModalOpen(true)}
             onEditTask={(task) => setEditingTask(task)} onRenameProject={renameProject} onUpdateTask={updateTask}
             onStepClick={(i) => setStepDetail(i)}
+            onDeleteTaskCompletionStep={deleteTaskCompletionStep}
             taskTagColors={taskTagColors}
             allKnownTaskTags={allKnownTaskTags}
             onSetTaskTagColor={setTaskTagColor}
@@ -1936,7 +1958,7 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
   );
 }
 
-function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCreateModal, onEditTask, onRenameProject, onUpdateTask, onStepClick, taskTagColors, allKnownTaskTags, onSetTaskTagColor, onSetProjectColor, onMoveTask, onMoveProject }) {
+function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCreateModal, onEditTask, onRenameProject, onUpdateTask, onStepClick, onDeleteTaskCompletionStep, taskTagColors, allKnownTaskTags, onSetTaskTagColor, onSetProjectColor, onMoveTask, onMoveProject }) {
   const [tagEditor, setTagEditor] = useState(null);
   const [priorityEditor, setPriorityEditor] = useState(null);
   const [statusEditor, setStatusEditor] = useState(null);
@@ -2030,34 +2052,80 @@ function TasksView({ state, onComplete, onUncomplete, onAdd, onDelete, onOpenCre
         <Panel2 title={`Concluídas · ${taskCompletionArchive.length} no histórico (ligadas aos degraus)`}>
           <div style={{ fontSize: 11, color: stepzTokens.textFaint, marginBottom: 12, lineHeight: 1.45 }}>
             Cada conclusão vira um degrau na escada. Ao apagar a task no projeto, o registro e o degrau permanecem aqui.
+            {' '}Use o ✕ ao lado do número para remover essa conclusão e o degrau correspondente.
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {[...taskCompletionArchive].reverse().map((st) => (
-              <button
+              <div
                 key={st.id || `${st.stepIndex}-${st.completedAt}`}
-                type="button"
-                onClick={() => onStepClick && onStepClick(st.stepIndex)}
-                title="Ver o mesmo degrau da escada"
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
-                  background: stepzTokens.panel2, borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '10px 12px',
+                  background: stepzTokens.panel2,
+                  borderRadius: 8,
                   border: `1px solid ${stepzTokens.border}`,
-                  cursor: onStepClick ? 'pointer' : 'default',
-                  textAlign: 'left', fontFamily: stepzTokens.font,
+                  fontFamily: stepzTokens.font,
                 }}
               >
-                <div style={{ width: 4, height: 28, background: stepzTokens.accent, borderRadius: 2, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: stepzTokens.text, fontWeight: 500 }}>{st.title}</div>
-                  <div style={{ fontSize: 11, color: stepzTokens.textFaint, marginTop: 2 }}>
-                    {(st.project || DEFAULT_PROJECT)} · {formatDate(st.completedAt.slice(0, 10))}
-                    {' · '}{formatRelative(st.completedAt)}
+                <button
+                  type="button"
+                  onClick={() => onStepClick && onStepClick(st.stepIndex)}
+                  title="Ver o mesmo degrau da escada"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    cursor: onStepClick ? 'pointer' : 'default',
+                    textAlign: 'left',
+                    fontFamily: stepzTokens.font,
+                    color: 'inherit',
+                  }}
+                >
+                  <div style={{ width: 4, height: 28, background: stepzTokens.accent, borderRadius: 2, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: stepzTokens.text, fontWeight: 500 }}>{st.title}</div>
+                    <div style={{ fontSize: 11, color: stepzTokens.textFaint, marginTop: 2 }}>
+                      {(st.project || DEFAULT_PROJECT)} · {formatDate(st.completedAt.slice(0, 10))}
+                      {' · '}{formatRelative(st.completedAt)}
+                    </div>
                   </div>
+                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  {typeof onDeleteTaskCompletionStep === 'function' ? (
+                    <button
+                      type="button"
+                      title="Apagar esta conclusão e o degrau na escada"
+                      aria-label="Apagar conclusão e degrau"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!confirm('Remover esta conclusão e o degrau correspondente na escada?')) return;
+                        onDeleteTaskCompletionStep({ id: st.id, stepIndex: st.stepIndex });
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: stepzTokens.textFaint,
+                        cursor: 'pointer',
+                        fontSize: 18,
+                        lineHeight: 1,
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        fontFamily: stepzTokens.font,
+                      }}
+                    >×</button>
+                  ) : null}
+                  <span style={{ fontSize: 11, color: stepzTokens.textFaint, fontFamily: stepzTokens.fontMono }}>
+                    #{st.stepIndex + 1}
+                  </span>
                 </div>
-                <div style={{ fontSize: 11, color: stepzTokens.textFaint, fontFamily: stepzTokens.fontMono, flexShrink: 0 }}>
-                  #{st.stepIndex + 1}
-                </div>
-              </button>
+              </div>
             ))}
           </div>
         </Panel2>
