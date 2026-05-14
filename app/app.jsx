@@ -799,7 +799,11 @@ function App() {
       : (input.category || defaultTaskCategoryId());
     const status = isLegacy ? 'todo' : input.status;
     const priority = isLegacy ? 'medium' : input.priority;
-    const dueDate = isLegacy ? todayStr() : (input.dueDate || todayStr());
+    const dueDate = isLegacy
+      ? todayStr()
+      : (input.dueDate != null && String(input.dueDate).trim()
+        ? String(input.dueDate).trim().slice(0, 10)
+        : '');
     const tags = isLegacy ? [] : input.tags;
     const description = isLegacy ? '' : input.description;
     const project = isLegacy ? DEFAULT_PROJECT : ((input.project || '').trim() || DEFAULT_PROJECT);
@@ -5658,7 +5662,7 @@ function TaskCreateModal({ onClose, onCreate, projectOptions = [], taskTagColors
   const [projectMode, setProjectMode] = useState(hasExistingProjects ? 'existing' : 'new');
   const [selectedProject, setSelectedProject] = useState('');
   const [newProject, setNewProject] = useState('');
-  const [dueDate, setDueDate] = useState(todayStr());
+  const [dueDate, setDueDate] = useState('');
   const [tags, setTags] = useState([]);
   const [tagPopoverAnchor, setTagPopoverAnchor] = useState(null);
   const [description, setDescription] = useState('');
@@ -5718,7 +5722,13 @@ function TaskCreateModal({ onClose, onCreate, projectOptions = [], taskTagColors
             <select value={priority} onChange={e => setPriority(e.target.value)} style={modalInputStyle}>
               {TASK_PRIORITIES.map(p => <option key={p.id} value={p.id} style={{ color: '#000', background: '#fff' }}>{p.label}</option>)}
             </select>
-            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={modalInputStyle} />
+            <input
+              type="date"
+              value={dueDate}
+              onChange={e => setDueDate(e.target.value)}
+              title="Opcional — deixe em branco se não quiser prazo"
+              style={modalInputStyle}
+            />
           </div>
 
           <div style={{ display: 'grid', gap: 6 }}>
