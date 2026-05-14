@@ -1844,6 +1844,182 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
   );
 }
 
+const ZENQUOTES_INSPIRATION_URL = 'https://zenquotes.io/api/quotes/inspiration';
+const STEPZ_ZEN_INSPIRATION_LS = 'stepzZenInspirationV1';
+
+function hashStringToNonNegative(s) {
+  let h = 0;
+  const str = String(s || '');
+  for (let i = 0; i < str.length; i += 1) {
+    h = (h * 31 + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+function pickDailyInspirationQuote(list, dateKey) {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const idx = hashStringToNonNegative(dateKey) % list.length;
+  const item = list[idx];
+  if (!item || typeof item.q !== 'string' || !String(item.q).trim()) return null;
+  return { q: String(item.q).trim(), a: String(item.a || '').trim() };
+}
+
+/** Lista de quotes inspiration: tenta ZenQuotes direto; se falhar (CORS/rede), usa proxy allorigins (só leitura). */
+async function fetchZenQuotesInspirationList() {
+  try {
+    const res = await fetch(ZENQUOTES_INSPIRATION_URL, { mode: 'cors', credentials: 'omit' });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length) return data;
+    }
+  } catch (_) { /* bloqueio CORS, extensão, offline, etc. */ }
+
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(ZENQUOTES_INSPIRATION_URL)}`;
+  const pr = await fetch(proxyUrl, { mode: 'cors', credentials: 'omit' });
+  if (!pr.ok) throw new Error('proxy');
+  const text = await pr.text();
+  const data = JSON.parse(text);
+  if (!Array.isArray(data) || !data.length) throw new Error('empty');
+  return data;
+}
+
+/** Citação diária (ZenQuotes, keyword inspiration) — cache por dia em localStorage. */
+function HomeInspirationQuote() {
+  const { isMobile } = useStepzViewport();
+  const [quote, setQuote] = useState(null);
+  const [inspoPhase, setInspoPhase] = useState('loading');
+
+  useEffect(() => {
+    let cancelled = false;
+    const day = todayStr();
+
+    const finish = (q, a, ok) => {
+      if (cancelled) return;
+      if (ok && q) {
+        setQuote({ q, a: a || '' });
+        setInspoPhase('ready');
+      } else {
+        setQuote(null);
+        setInspoPhase('error');
+      }
+    };
+
+    try {
+      const raw = localStorage.getItem(STEPZ_ZEN_INSPIRATION_LS);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.date === day && parsed.q) {
+          finish(parsed.q, parsed.a, true);
+          return () => { cancelled = true; };
+        }
+      }
+    } catch (_) { /* ignora cache inválido */ }
+
+    (async () => {
+      try {
+        const list = await fetchZenQuotesInspirationList();
+        const picked = pickDailyInspirationQuote(list, day);
+        if (!picked) throw new Error('pick');
+        try {
+          localStorage.setItem(STEPZ_ZEN_INSPIRATION_LS, JSON.stringify({
+            date: day, q: picked.q, a: picked.a,
+          }));
+        } catch (_) { /* quota / modo privado */ }
+        finish(picked.q, picked.a, true);
+      } catch (_) {
+        try {
+          const raw = localStorage.getItem(STEPZ_ZEN_INSPIRATION_LS);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed.q) {
+              finish(parsed.q, parsed.a, true);
+              return;
+            }
+          }
+        } catch (_) { /* */ }
+        finish(null, null, false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, []);
+
+  const wrapStyle = {
+    marginBottom: isMobile ? 12 : 14,
+    padding: isMobile ? '12px 14px' : '14px 18px',
+    borderRadius: 12,
+    border: `1px solid ${stepzTokens.border}`,
+    background: 'rgba(255,255,255,0.03)',
+    maxWidth: '100%',
+    boxSizing: 'border-box',
+  };
+
+  if (inspoPhase === 'loading' && !quote) {
+    return (
+      <div style={{ ...wrapStyle, fontSize: 12, color: stepzTokens.textFaint, fontStyle: 'italic' }}>
+        Carregando inspiração do dia…
+      </div>
+    );
+  }
+
+  if (inspoPhase === 'error' && !quote) {
+    return (
+      <div style={{ ...wrapStyle, fontSize: 12, color: stepzTokens.textDim, lineHeight: 1.45 }}>
+        Não foi possível carregar a frase hoje. Verifique a rede ou desative bloqueadores que impeçam pedidos a zenquotes.io ou api.allorigins.win.
+      </div>
+    );
+  }
+
+  if (!quote || !quote.q) return null;
+
+  return (
+    <div style={wrapStyle}>
+      <div style={{
+        fontSize: 10,
+        fontWeight: 600,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: stepzTokens.accent,
+        marginBottom: 8,
+      }}>
+        Inspiração do dia
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          flexWrap: 'nowrap',
+          alignItems: 'baseline',
+          gap: 10,
+          minWidth: 0,
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'thin',
+          fontSize: isMobile ? 13 : 14,
+          lineHeight: 1.55,
+          color: stepzTokens.text,
+        }}
+      >
+        <span style={{ fontStyle: 'italic', fontWeight: 400, whiteSpace: 'nowrap' }}>
+          “{quote.q}”
+        </span>
+        {quote.a ? (
+          <span style={{
+            flexShrink: 0,
+            color: stepzTokens.textDim,
+            fontStyle: 'normal',
+            fontWeight: 500,
+            fontSize: isMobile ? 12 : 13,
+            whiteSpace: 'nowrap',
+          }}>
+            — {quote.a}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function HomeView({ state, totalSteps, todaySteps, dayStreak,
   onCompleteTask, onUncompleteTask, onAddTask, onDeleteTask, onOpenCreateModal, onEditTask, onUpdateTask, onRenameProject, onToggleHabit, onEditHabit, onStepClick,
   taskTagColors, allKnownTaskTags, onSetTaskTagColor, onSetProjectColor }) {
@@ -1860,6 +2036,7 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
   const todayByProject = groupTasksByProject(todayTasks, state.projectOrder);
   return (
     <>
+    <HomeInspirationQuote />
     <div style={{
       display: 'grid',
       gridTemplateColumns: isMobile ? '1fr' : '1fr 340px',
