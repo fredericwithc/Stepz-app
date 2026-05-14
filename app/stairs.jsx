@@ -209,6 +209,8 @@ const STAIRS_DECADE_N = 10;
 const STAIRS_GOLD_FILL = 'url(#stepzStairGold)';
 const STAIRS_GOLD_RISER = 'oklch(0.52 0.06 78)';
 const STAIRS_GOLD_TEXT = '#0a0a0b';
+/** Tom central do gradiente dourado do tread — modal de hábito nos marcos ×10. */
+const STAIRS_MODAL_GOLD_ACCENT = '#e9c04a';
 
 function stepX(i, stepW, landingW) {
   const landings = Math.floor(i / STEPS_PER_LEVEL);
@@ -279,6 +281,36 @@ function colorForProjectName(name, overrides) {
   return STEPZ_PROJECT_PALETTE[Math.abs(h) % STEPZ_PROJECT_PALETTE.length];
 }
 
+/** Igual a `habitAccentCss` em app.jsx: cor explícita do hábito ou cor da categoria. */
+function liveStairsHabitAccentFill(habit, categories, accentFallback) {
+  if (!habit) return accentFallback;
+  const hc = habit.color != null && String(habit.color).trim();
+  if (hc) return String(habit.color).trim();
+  const list = Array.isArray(categories) && categories.length ? categories : BASE_CATEGORIES;
+  const defaultId = list[0]?.id || 'mind';
+  const catId = habit.category || defaultId;
+  const row = list.find((c) => c.id === catId) || list[0];
+  return (row && row.color) ? row.color : accentFallback;
+}
+
+/** Cor do tread antes do override dourado dos marcos de 10 — mesma lógica que pinta cada degrau. */
+function liveStairsStepBaseCatFill(stepData, habits, tasks, categories, projectColors, accentFallback) {
+  if (!stepData) return accentFallback;
+  if (stepData.color) return String(stepData.color).trim();
+  if (stepData.taskId) {
+    const projectName = String(stepData.project || '').trim();
+    return projectName ? colorForProjectName(projectName, projectColors) : accentFallback;
+  }
+  if (stepData.habitId) {
+    const h = Array.isArray(habits) ? habits.find((x) => x.id === stepData.habitId) : null;
+    return liveStairsHabitAccentFill(h, categories, accentFallback);
+  }
+  if (stepData.category) {
+    return liveStairsCategoryRow(stepData.category, categories).color;
+  }
+  return accentFallback;
+}
+
 function liveStairsResolveRich(step, tasks, habits) {
   if (step?.completedGoalId) {
     const description = String(step.description || '').trim();
@@ -303,7 +335,7 @@ function liveStairsResolveRich(step, tasks, habits) {
   const priorityLabel = pid === 'low' ? 'Baixa' : pid === 'medium' ? 'Media' : pid === 'high' ? 'Alta' : '';
   const dueDate = step?.dueDate || task?.dueDate || '';
   const project = String(step?.project ?? task?.project ?? '').trim();
-  const category = step?.category || task?.category || habit?.category;
+  const category = habit ? undefined : (step?.category || task?.category);
   const kind = step?.taskId ? 'task' : step?.habitId ? 'habit' : 'other';
   return {
     task, habit, description, tags, priorityLabel, dueDate, project, category, kind,
@@ -491,19 +523,9 @@ function LiveStairs({
     const stepData = completed ? steps[i] : null;
     const isGoalStep = !!(completed && stepData?.completedGoalId);
     const accentFallback = typeof stepzTokens !== 'undefined' ? stepzTokens.accent : '#7c5cff';
-    /* Tasks: a cor passa a vir do projeto (não da categoria, que foi descontinuada).
-       Hábitos e metas mantêm a cor explícita (step.color) ou a cor da categoria como fallback. */
-    let catFill;
-    if (stepData?.color) {
-      catFill = stepData.color;
-    } else if (stepData?.taskId) {
-      const projectName = String(stepData.project || '').trim();
-      catFill = projectName ? colorForProjectName(projectName, projectColors) : accentFallback;
-    } else if (stepData?.category) {
-      catFill = liveStairsCategoryRow(stepData.category, categories).color;
-    } else {
-      catFill = accentFallback;
-    }
+    const catFill = !completed || !stepData
+      ? accentFallback
+      : liveStairsStepBaseCatFill(stepData, habits, tasks, categories, projectColors, accentFallback);
 
     let treadFill;
     let riserFill;
@@ -702,15 +724,32 @@ function LiveStairs({
 
   const hoverData = hover && hover.i < currentIdx ? steps[hover.i] : null;
   const hoverRich = hoverData ? liveStairsResolveRich(hoverData, tasks, habits) : null;
-  const hoverCat = hoverRich ? liveStairsCategoryRow(hoverRich.category, categories) : null;
+  const hoverCat = hoverRich && hoverRich.kind !== 'habit'
+    ? liveStairsCategoryRow(hoverRich.category, categories)
+    : null;
   const hoverPaletteHex = hoverData?.color ? String(hoverData.color).trim() : '';
   const hoverUsePalette = !!(hoverPaletteHex && (hoverRich?.kind === 'goal' || hoverRich?.kind === 'habit'));
-  /* Para tasks o chip mostra o projeto + cor do projeto. Hábitos e metas mantêm a categoria/paleta. */
+  const hoverIsHabit = hoverRich?.kind === 'habit';
+  const accentFallbackHover = typeof stepzTokens !== 'undefined' ? stepzTokens.accent : '#7c5cff';
+  const hoverStepBaseFill = hoverData
+    ? liveStairsStepBaseCatFill(hoverData, habits, tasks, categories, projectColors, accentFallbackHover)
+    : accentFallbackHover;
+  const hoverHabitDecade = !!(hoverIsHabit && hover != null && stairIsDecade(hover.i));
+  const hoverHabitAccent = hoverIsHabit
+    ? (hoverHabitDecade ? STAIRS_MODAL_GOLD_ACCENT : hoverStepBaseFill)
+    : '';
+  const hoverHabitModalBg = hoverIsHabit && hoverHabitAccent
+    ? `linear-gradient(168deg, color-mix(in srgb, ${hoverHabitAccent} 28%, rgb(8,8,11)) 0%, rgb(9,9,11) 50%, rgb(10,10,12) 100%)`
+    : 'rgba(10,10,12,0.96)';
+  /* Tasks: chip = projeto. Metas: chip = paleta ou categoria. Hábitos: sem chip — cor só no modal. */
   const hoverIsTask = hoverRich?.kind === 'task';
   const hoverProjectName = hoverIsTask ? String(hoverRich?.project || '').trim() : '';
   let hoverChipBg;
   let hoverChipLabel;
-  if (hoverUsePalette) {
+  if (hoverIsHabit) {
+    hoverChipBg = '';
+    hoverChipLabel = '';
+  } else if (hoverUsePalette) {
     hoverChipBg = hoverPaletteHex;
     hoverChipLabel = goalPaletteHoverLabel(hoverPaletteHex);
   } else if (hoverIsTask && hoverProjectName) {
@@ -720,6 +759,7 @@ function LiveStairs({
     hoverChipBg = hoverCat?.color ?? 'rgba(242,239,233,0.42)';
     hoverChipLabel = hoverCat?.label ?? '—';
   }
+  const hoverShowMainChip = !hoverIsHabit && !!hoverChipLabel && hoverChipLabel !== '—';
   const currentLevel = Math.floor(currentIdx / STEPS_PER_LEVEL) + 1;
   const stepsInLevel = currentIdx % STEPS_PER_LEVEL;
 
@@ -816,22 +856,30 @@ function LiveStairs({
             position: 'absolute',
             left: Math.min(hover.x + 14, Math.max(8, size.w - 304)),
             top: Math.max(hover.y - 72, 8),
-            background: 'rgba(10,10,12,0.96)',
-            border: `1px solid ${stepzTokens.borderStrong}`,
+            background: hoverHabitModalBg,
+            border: `1px solid ${hoverIsHabit && hoverHabitAccent ? hoverHabitAccent : stepzTokens.borderStrong}`,
             borderRadius: 10, padding: '12px 14px',
-            pointerEvents: 'none', boxShadow: '0 12px 44px rgba(0,0,0,0.55)',
+            pointerEvents: 'none',
+            boxShadow: hoverIsHabit && hoverHabitAccent
+              ? `0 12px 44px rgba(0,0,0,0.58), 0 0 40px ${hoverHabitAccent}33`
+              : '0 12px 44px rgba(0,0,0,0.55)',
             minWidth: 200, maxWidth: 300, zIndex: 2,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-              <div style={{ fontSize: 10, color: stepzTokens.accent, letterSpacing: 0.45, textTransform: 'uppercase' }}>
+              <div style={{
+                fontSize: 10,
+                color: hoverIsHabit && hoverHabitAccent ? hoverHabitAccent : stepzTokens.accent,
+                letterSpacing: 0.45, textTransform: 'uppercase',
+              }}>
                 degrau {hover.i + 1}
               </div>
               <div style={{
                 fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase',
                 padding: '3px 8px', borderRadius: 999,
-                border: `1px solid ${stepzTokens.border}`,
-                color: stepzTokens.textDim,
+                border: `1px solid ${hoverIsHabit && hoverHabitAccent ? hoverHabitAccent : stepzTokens.border}`,
+                color: hoverIsHabit && hoverHabitAccent ? hoverHabitAccent : stepzTokens.textDim,
                 fontFamily: stepzTokens.fontMono,
+                background: hoverIsHabit && hoverHabitAccent ? `${hoverHabitAccent}14` : 'transparent',
               }}>
                 {hoverRich.kind === 'goal' ? 'meta' : hoverRich.kind === 'habit' ? 'hábito' : hoverRich.kind === 'task' ? 'task' : '—'}
               </div>
@@ -839,19 +887,23 @@ function LiveStairs({
             <div style={{ fontSize: 14, fontWeight: 600, color: stepzTokens.text, lineHeight: 1.25, marginBottom: 8 }}>
               {hoverData.title}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: hoverRich.description ? 8 : 6 }}>
-              <span style={{
-                fontSize: 10, fontWeight: 600, padding: '3px 9px', borderRadius: 999,
-                color: '#fff', background: hoverChipBg,
-                maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }} title={hoverChipLabel}>{hoverChipLabel}</span>
-              {hoverRich.kind === 'task' && hoverRich.priorityLabel ? (
-                <span style={{
-                  fontSize: 10, color: stepzTokens.textDim,
-                  padding: '3px 9px', borderRadius: 999, border: `1px solid ${stepzTokens.border}`,
-                }}>{hoverRich.priorityLabel}</span>
-              ) : null}
-            </div>
+            {(hoverShowMainChip || (hoverRich.kind === 'task' && hoverRich.priorityLabel)) ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: hoverRich.description ? 8 : 6 }}>
+                {hoverShowMainChip ? (
+                  <span style={{
+                    fontSize: 10, fontWeight: 600, padding: '3px 9px', borderRadius: 999,
+                    color: '#fff', background: hoverChipBg,
+                    maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }} title={hoverChipLabel}>{hoverChipLabel}</span>
+                ) : null}
+                {hoverRich.kind === 'task' && hoverRich.priorityLabel ? (
+                  <span style={{
+                    fontSize: 10, color: stepzTokens.textDim,
+                    padding: '3px 9px', borderRadius: 999, border: `1px solid ${stepzTokens.border}`,
+                  }}>{hoverRich.priorityLabel}</span>
+                ) : null}
+              </div>
+            ) : null}
             {hoverRich.description ? (
               <div style={{
                 fontSize: 12, color: stepzTokens.textDim, lineHeight: 1.45,

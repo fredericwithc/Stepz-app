@@ -1134,7 +1134,6 @@ function App() {
           id: cryptoId(),
           habitId: h.id,
           title: h.title,
-          category: h.category,
           ...(h.color ? { color: h.color } : {}),
           completedAt,
         }];
