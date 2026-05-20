@@ -1871,105 +1871,14 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
   );
 }
 
-const ZENQUOTES_INSPIRATION_URL = 'https://zenquotes.io/api/quotes/inspiration';
-const STEPZ_ZEN_INSPIRATION_LS = 'stepzZenInspirationV1';
-
-function hashStringToNonNegative(s) {
-  let h = 0;
-  const str = String(s || '');
-  for (let i = 0; i < str.length; i += 1) {
-    h = (h * 31 + str.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
-}
-
-function pickDailyInspirationQuote(list, dateKey) {
-  if (!Array.isArray(list) || list.length === 0) return null;
-  const idx = hashStringToNonNegative(dateKey) % list.length;
-  const item = list[idx];
-  if (!item || typeof item.q !== 'string' || !String(item.q).trim()) return null;
-  return { q: String(item.q).trim(), a: String(item.a || '').trim() };
-}
-
-/** Lista de quotes inspiration: tenta ZenQuotes direto; se falhar (CORS/rede), usa proxy allorigins (só leitura). */
-async function fetchZenQuotesInspirationList() {
-  try {
-    const res = await fetch(ZENQUOTES_INSPIRATION_URL, { mode: 'cors', credentials: 'omit' });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length) return data;
-    }
-  } catch (_) { /* bloqueio CORS, extensão, offline, etc. */ }
-
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(ZENQUOTES_INSPIRATION_URL)}`;
-  const pr = await fetch(proxyUrl, { mode: 'cors', credentials: 'omit' });
-  if (!pr.ok) throw new Error('proxy');
-  const text = await pr.text();
-  const data = JSON.parse(text);
-  if (!Array.isArray(data) || !data.length) throw new Error('empty');
-  return data;
-}
-
-/** Citação diária (ZenQuotes, keyword inspiration) — cache por dia em localStorage. */
+/** Inspiração do dia — catálogo em app/inspiration-quotes.js, rotação sequencial por dia de calendário. */
 function HomeInspirationQuote() {
   const { isMobile } = useStepzViewport();
-  const [quote, setQuote] = useState(null);
-  const [inspoPhase, setInspoPhase] = useState('loading');
-
-  useEffect(() => {
-    let cancelled = false;
-    const day = todayStr();
-
-    const finish = (q, a, ok) => {
-      if (cancelled) return;
-      if (ok && q) {
-        setQuote({ q, a: a || '' });
-        setInspoPhase('ready');
-      } else {
-        setQuote(null);
-        setInspoPhase('error');
-      }
-    };
-
-    try {
-      const raw = localStorage.getItem(STEPZ_ZEN_INSPIRATION_LS);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.date === day && parsed.q) {
-          finish(parsed.q, parsed.a, true);
-          return () => { cancelled = true; };
-        }
-      }
-    } catch (_) { /* ignora cache inválido */ }
-
-    (async () => {
-      try {
-        const list = await fetchZenQuotesInspirationList();
-        const picked = pickDailyInspirationQuote(list, day);
-        if (!picked) throw new Error('pick');
-        try {
-          localStorage.setItem(STEPZ_ZEN_INSPIRATION_LS, JSON.stringify({
-            date: day, q: picked.q, a: picked.a,
-          }));
-        } catch (_) { /* quota / modo privado */ }
-        finish(picked.q, picked.a, true);
-      } catch (_) {
-        try {
-          const raw = localStorage.getItem(STEPZ_ZEN_INSPIRATION_LS);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed && parsed.q) {
-              finish(parsed.q, parsed.a, true);
-              return;
-            }
-          }
-        } catch (_) { /* */ }
-        finish(null, null, false);
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, []);
+  const day = todayStr();
+  const catalog = typeof INSPIRATION_QUOTES !== 'undefined' ? INSPIRATION_QUOTES : [];
+  const epoch = typeof INSPIRATION_QUOTES_EPOCH !== 'undefined' ? INSPIRATION_QUOTES_EPOCH : day;
+  const pickFn = typeof pickInspirationForDay === 'function' ? pickInspirationForDay : null;
+  const picked = pickFn ? pickFn(catalog, epoch, day) : null;
 
   const wrapStyle = {
     marginBottom: isMobile ? 12 : 14,
@@ -1981,35 +1890,41 @@ function HomeInspirationQuote() {
     boxSizing: 'border-box',
   };
 
-  if (inspoPhase === 'loading' && !quote) {
-    return (
-      <div style={{ ...wrapStyle, fontSize: 12, color: stepzTokens.textFaint, fontStyle: 'italic' }}>
-        Carregando inspiração do dia…
-      </div>
-    );
-  }
-
-  if (inspoPhase === 'error' && !quote) {
+  if (!catalog.length) {
     return (
       <div style={{ ...wrapStyle, fontSize: 12, color: stepzTokens.textDim, lineHeight: 1.45 }}>
-        Não foi possível carregar a frase hoje. Verifique a rede ou desative bloqueadores que impeçam pedidos a zenquotes.io ou api.allorigins.win.
+        Nenhuma frase no catálogo. Adicione entradas em{' '}
+        <code style={{ fontSize: 11, color: stepzTokens.textFaint }}>app/inspiration-quotes.js</code>.
       </div>
     );
   }
 
-  if (!quote || !quote.q) return null;
+  if (!picked || !picked.quote?.q) return null;
+
+  const { quote, index, total } = picked;
 
   return (
     <div style={wrapStyle}>
       <div style={{
-        fontSize: 10,
-        fontWeight: 600,
-        letterSpacing: 0.6,
-        textTransform: 'uppercase',
-        color: stepzTokens.accent,
+        display: 'flex',
+        alignItems: 'baseline',
+        justifyContent: 'space-between',
+        gap: 10,
         marginBottom: 8,
+        flexWrap: 'wrap',
       }}>
-        Inspiração do dia
+        <div style={{
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: 0.6,
+          textTransform: 'uppercase',
+          color: stepzTokens.accent,
+        }}>
+          Inspiração do dia
+        </div>
+        <div style={{ fontSize: 10, color: stepzTokens.textFaint, fontFamily: stepzTokens.fontMono }}>
+          Frase {index + 1} de {total}
+        </div>
       </div>
       <div
         style={{
