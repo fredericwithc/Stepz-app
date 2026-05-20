@@ -1922,9 +1922,6 @@ function HomeInspirationQuote() {
         }}>
           Inspiração do dia
         </div>
-        <div style={{ fontSize: 10, color: stepzTokens.textFaint, fontFamily: stepzTokens.fontMono }}>
-          Frase {index + 1} de {total}
-        </div>
       </div>
       <div
         style={{
