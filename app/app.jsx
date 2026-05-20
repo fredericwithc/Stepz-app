@@ -1,13 +1,15 @@
 const { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useContext, createContext } = React;
 
-/** ≤768px: uma coluna, tabs com scroll, menos padding. ≤1024px: tablet (opcional). */
+/** ≤768px: uma coluna, tabs com scroll, menos padding. ≤1024px: tablet (opcional). ≤430px: iPhone estreito. */
 const STEPZ_BREAKPOINT_MOBILE = 768;
 const STEPZ_BREAKPOINT_TABLET = 1024;
+const STEPZ_BREAKPOINT_NARROW = 430;
 
 const StepzViewportContext = createContext({
   width: 1024,
   isMobile: false,
   isTablet: false,
+  isNarrow: false,
 });
 
 function StepzViewportProvider({ children }) {
@@ -25,6 +27,7 @@ function StepzViewportProvider({ children }) {
     width,
     isMobile: width <= STEPZ_BREAKPOINT_MOBILE,
     isTablet: width <= STEPZ_BREAKPOINT_TABLET,
+    isNarrow: width <= STEPZ_BREAKPOINT_NARROW,
   }), [width]);
   return (
     <StepzViewportContext.Provider value={value}>
@@ -1412,7 +1415,17 @@ function App() {
   }
 
   return (
-    <div style={{ fontFamily: stepzTokens.font, background: stepzTokens.bg, color: stepzTokens.text, minHeight: '100vh' }}>
+    <div style={{
+      fontFamily: stepzTokens.font,
+      background: stepzTokens.bg,
+      color: stepzTokens.text,
+      minHeight: '100vh',
+      width: '100%',
+      maxWidth: '100%',
+      minWidth: 0,
+      overflowX: 'hidden',
+      boxSizing: 'border-box',
+    }}>
       <AppHeader
         tab={tab}
         setTab={setTab}
@@ -1591,7 +1604,7 @@ function App() {
   );
 }
 
-function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile }) {
+function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubtitle }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
@@ -1679,6 +1692,11 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile }) {
         >
           <div style={{ padding: '8px 12px 10px', borderBottom: `1px solid ${stepzTokens.border}`, marginBottom: 4 }}>
             <div style={{ fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase', color: stepzTokens.textFaint, marginBottom: 4 }}>conta</div>
+            {dateSubtitle ? (
+              <div style={{ fontSize: 12, color: stepzTokens.text, marginBottom: 6, lineHeight: 1.3 }}>
+                {dateSubtitle}
+              </div>
+            ) : null}
             <div
               title={userEmail}
               style={{
@@ -1734,7 +1752,6 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
     { id: 'postits', label: 'Post-its' },
     { id: 'journey', label: 'Jornada' },
   ];
-  /* Em mobile usamos formato compacto da data ("dom, 10 mai") para caber na mesma linha do chip + avatar. */
   const todayFull = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
   const todayShort = new Date().toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' });
   const today = isMobile ? todayShort : todayFull;
@@ -1746,6 +1763,11 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
       top: 0,
       zIndex: 10,
       paddingTop: 'env(safe-area-inset-top, 0px)',
+      width: '100%',
+      maxWidth: '100%',
+      minWidth: 0,
+      overflowX: 'hidden',
+      boxSizing: 'border-box',
     }}>
       <div style={{
         maxWidth: 1300,
@@ -1761,6 +1783,7 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
           justifyContent: 'space-between',
           gap: isMobile ? 8 : 14,
           flexWrap: 'nowrap',
+          minWidth: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, minWidth: 0, flex: '1 1 auto' }}>
             <img
@@ -1788,24 +1811,28 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
             gap: isMobile ? 8 : 14,
             justifyContent: 'flex-end',
             flexShrink: 0,
+            minWidth: 0,
           }}>
-            <div
-              title={todayFull}
-              style={{
-                fontSize: isMobile ? 11 : 13,
-                color: stepzTokens.textDim,
-                textAlign: 'right',
-                lineHeight: 1.2,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {today}
-            </div>
+            {!isMobile ? (
+              <div
+                title={todayFull}
+                style={{
+                  fontSize: 13,
+                  color: stepzTokens.textDim,
+                  textAlign: 'right',
+                  lineHeight: 1.2,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {today}
+              </div>
+            ) : null}
             <ProfileMenu
               userEmail={userEmail}
               onChangePassword={onChangePassword}
               onLogout={onLogout}
               isMobile={isMobile}
+              dateSubtitle={isMobile ? todayFull : undefined}
             />
           </div>
         </div>
@@ -1817,9 +1844,10 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
           WebkitOverflowScrolling: 'touch',
           flexWrap: 'nowrap',
           paddingBottom: 2,
-          marginLeft: isMobile ? -4 : 0,
-          marginRight: isMobile ? -4 : 0,
-          scrollbarWidth: 'thin',
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+          scrollbarWidth: isMobile ? 'none' : 'thin',
         }}>
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
@@ -1986,30 +2014,28 @@ function HomeInspirationQuote() {
       <div
         style={{
           display: 'flex',
-          flexDirection: 'row',
-          flexWrap: 'nowrap',
-          alignItems: 'baseline',
-          gap: 10,
+          flexDirection: isMobile ? 'column' : 'row',
+          flexWrap: 'wrap',
+          alignItems: isMobile ? 'flex-start' : 'baseline',
+          gap: isMobile ? 6 : 10,
           minWidth: 0,
-          overflowX: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          scrollbarWidth: 'thin',
           fontSize: isMobile ? 13 : 14,
           lineHeight: 1.55,
           color: stepzTokens.text,
+          overflowWrap: 'break-word',
+          wordBreak: 'break-word',
         }}
       >
-        <span style={{ fontStyle: 'italic', fontWeight: 400, whiteSpace: 'nowrap' }}>
+        <span style={{ fontStyle: 'italic', fontWeight: 400, whiteSpace: 'normal' }}>
           “{quote.q}”
         </span>
         {quote.a ? (
           <span style={{
-            flexShrink: 0,
             color: stepzTokens.textDim,
             fontStyle: 'normal',
             fontWeight: 500,
             fontSize: isMobile ? 12 : 13,
-            whiteSpace: 'nowrap',
+            whiteSpace: 'normal',
           }}>
             — {quote.a}
           </span>
@@ -3688,14 +3714,18 @@ function Panel2({ title, action, children }) {
     }}>
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'center',
         justifyContent: 'space-between',
         marginBottom: 14,
-        gap: 12,
-        flexWrap: isMobile ? 'wrap' : 'nowrap',
+        gap: isMobile ? 10 : 12,
+        flexWrap: 'nowrap',
+        minWidth: 0,
       }}>
-        <div style={{ fontSize: isMobile ? 13 : 15, fontWeight: 600, letterSpacing: -0.2 }}>{title}</div>
-        {action}
+        <div style={{ fontSize: isMobile ? 13 : 15, fontWeight: 600, letterSpacing: -0.2, minWidth: 0 }}>{title}</div>
+        {action ? (
+          <div style={{ flexShrink: 0, alignSelf: isMobile ? 'flex-end' : 'center' }}>{action}</div>
+        ) : null}
       </div>
       {children}
     </div>
@@ -5449,7 +5479,14 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
         )}
       </div>
       {open && (
-        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 8 }}>
+        <div style={{
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          paddingBottom: 8,
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+        }}>
           <div style={{ minWidth: 648 }}>
             {showTaskTableHeader ? <TaskTableHeaderRow /> : null}
             {children}

@@ -802,27 +802,41 @@ function LiveStairs({
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: layoutCompact ? 6 : 8,
-          flexWrap: layoutCompact ? 'wrap' : 'nowrap',
-          justifyContent: layoutCompact ? 'flex-end' : 'flex-start',
-          flex: layoutCompact ? '1 1 auto' : 'none',
-          marginLeft: layoutCompact ? 'auto' : undefined,
+          gap: layoutCompact ? 4 : 8,
+          flexWrap: 'nowrap',
+          justifyContent: layoutCompact ? 'space-between' : 'flex-start',
+          flex: layoutCompact ? '1 1 100%' : 'none',
+          width: layoutCompact ? '100%' : undefined,
+          minWidth: 0,
+          maxWidth: '100%',
         }}>
-          <div style={{ fontSize: 11, color: stepzTokens.textFaint, marginRight: 6, fontFamily: stepzTokens.fontMono }}>
-            {lod === 'far' ? 'visão geral' : lod === 'mid' ? 'níveis' : 'detalhes'}
+          {!layoutCompact ? (
+            <div style={{ fontSize: 11, color: stepzTokens.textFaint, marginRight: 6, fontFamily: stepzTokens.fontMono, flexShrink: 0 }}>
+              {lod === 'far' ? 'visão geral' : lod === 'mid' ? 'níveis' : 'detalhes'}
+            </div>
+          ) : null}
+          <div style={{ display: 'flex', alignItems: 'center', gap: layoutCompact ? 4 : 8, flexShrink: 0 }}>
+            <ZoomBtn compact={layoutCompact} onClick={() => zoomOnCurrent(0.75)}>−</ZoomBtn>
+            <div style={{
+              width: layoutCompact ? 44 : 56,
+              height: 28,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(255,255,255,0.04)',
+              borderRadius: 6,
+              fontSize: layoutCompact ? 11 : 12,
+              color: stepzTokens.textDim,
+              fontFamily: stepzTokens.fontMono,
+              flexShrink: 0,
+            }}>{Math.round(zoom * 100)}%</div>
+            <ZoomBtn compact={layoutCompact} onClick={() => zoomOnCurrent(1.4)}>+</ZoomBtn>
+            <ZoomBtn compact={layoutCompact} onClick={() => {
+              const f = fitToView(size.w, size.h);
+              zoomRef.current = f.z; panRef.current = { x: f.px, y: f.py };
+              setZoom(f.z); setPan({ x: f.px, y: f.py });
+            }} wide>{layoutCompact ? '⊡' : 'ajustar'}</ZoomBtn>
           </div>
-          <ZoomBtn onClick={() => zoomOnCurrent(0.75)}>−</ZoomBtn>
-          <div style={{
-            width: 56, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(255,255,255,0.04)', borderRadius: 6,
-            fontSize: 12, color: stepzTokens.textDim, fontFamily: stepzTokens.fontMono,
-          }}>{Math.round(zoom * 100)}%</div>
-          <ZoomBtn onClick={() => zoomOnCurrent(1.4)}>+</ZoomBtn>
-          <ZoomBtn onClick={() => {
-            const f = fitToView(size.w, size.h);
-            zoomRef.current = f.z; panRef.current = { x: f.px, y: f.py };
-            setZoom(f.z); setPan({ x: f.px, y: f.py });
-          }} wide>ajustar</ZoomBtn>
         </div>
       </div>
 
@@ -958,28 +972,42 @@ function LiveStairs({
           </div>
         )}
 
-        <div style={{
-          position: 'absolute', left: 14, bottom: 12,
-          fontSize: 10, color: stepzTokens.textFaint,
-          fontFamily: stepzTokens.fontMono, letterSpacing: 0.3,
-        }}>
-          ⌘ + scroll · zoom · arraste p/ mover · passe o mouse p/ resumo · clique p/ detalhes
-        </div>
+        {!layoutCompact ? (
+          <div style={{
+            position: 'absolute', left: 14, bottom: 12,
+            fontSize: 10, color: stepzTokens.textFaint,
+            fontFamily: stepzTokens.fontMono, letterSpacing: 0.3,
+          }}>
+            ⌘ + scroll · zoom · arraste p/ mover · passe o mouse p/ resumo · clique p/ detalhes
+          </div>
+        ) : (
+          <div style={{
+            position: 'absolute', left: 10, right: 10, bottom: 10,
+            fontSize: 9, color: stepzTokens.textFaint,
+            fontFamily: stepzTokens.fontMono, letterSpacing: 0.2,
+            textAlign: 'center',
+            pointerEvents: 'none',
+          }}>
+            zoom · arraste · toque p/ detalhes
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function ZoomBtn({ children, onClick, wide }) {
+function ZoomBtn({ children, onClick, wide, compact }) {
+  const w = wide ? (compact ? 36 : 70) : 28;
   return (
-    <button onClick={onClick}
+    <button type="button" onClick={onClick}
+      title={wide && compact ? 'Ajustar vista' : undefined}
       onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
       style={{
         border: `1px solid ${stepzTokens.border}`, background: 'rgba(255,255,255,0.04)',
         color: stepzTokens.text, borderRadius: 6, height: 28,
-        width: wide ? 70 : 28, padding: 0,
-        fontSize: wide ? 11 : 14, cursor: 'pointer',
+        width: w, padding: 0, flexShrink: 0,
+        fontSize: wide ? (compact ? 14 : 11) : 14, cursor: 'pointer',
         fontFamily: stepzTokens.font, transition: 'background .12s',
       }}>{children}</button>
   );
