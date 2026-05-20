@@ -4870,6 +4870,210 @@ function TaskTagsTriggerCell({ tagsList, taskTagColors, taskId, onTagsPopoverOpe
   );
 }
 
+const TASK_DESC_MODAL_EXPAND_LS = 'stepz.taskDescModalExpanded.v1';
+
+/** Modal para ver e editar a descrição completa da task (não fica limitado à coluna da tabela). */
+function TaskDescriptionEditorModal({ taskTitle, value, onChange, onSave, onClose }) {
+  const { isMobile } = useStepzViewport();
+  const taRef = useRef(null);
+  const [expanded, setExpanded] = useState(() => {
+    if (typeof window === 'undefined' || isMobile) return false;
+    try {
+      return localStorage.getItem(TASK_DESC_MODAL_EXPAND_LS) === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleExpanded = () => {
+    setExpanded((v) => {
+      const next = !v;
+      if (!isMobile) {
+        try {
+          localStorage.setItem(TASK_DESC_MODAL_EXPAND_LS, next ? '1' : '0');
+        } catch (_) { /* ignore */ }
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => taRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        onSave();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose, onSave]);
+
+  const panel = (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-desc-editor-title"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 140,
+        background: 'rgba(0,0,0,0.62)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: isMobile ? '16px 14px' : '24px',
+        boxSizing: 'border-box',
+        backdropFilter: 'blur(4px)',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: isMobile ? '100%' : (expanded ? 'min(96vw, 1120px)' : 'min(92vw, 640px)'),
+          height: isMobile
+            ? (expanded ? 'min(92vh, 720px)' : undefined)
+            : (expanded ? 'min(88vh, 820px)' : 'min(72vh, 520px)'),
+          maxWidth: isMobile ? '100%' : '96vw',
+          maxHeight: isMobile ? (expanded ? '92vh' : 'min(92vh, 720px)') : '92vh',
+          minWidth: isMobile ? undefined : (expanded ? 480 : 380),
+          minHeight: isMobile ? (expanded ? 'min(70vh, 480px)' : undefined) : (expanded ? 420 : 300),
+          resize: isMobile ? 'none' : 'both',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          background: stepzTokens.panel,
+          border: `1px solid ${stepzTokens.borderStrong}`,
+          borderRadius: isMobile ? 12 : 14,
+          padding: isMobile ? '16px 16px 14px' : '22px 22px 18px',
+          boxSizing: 'border-box',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.55)',
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: isMobile ? 12 : 14,
+          minWidth: 0,
+          flexShrink: 0,
+        }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
+              id="task-desc-editor-title"
+              style={{
+                fontSize: 11,
+                color: stepzTokens.accent,
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+                marginBottom: 6,
+              }}
+            >
+              Descrição da task
+            </div>
+            {taskTitle ? (
+              <div style={{
+                fontSize: isMobile ? 14 : 16,
+                fontWeight: 600,
+                color: stepzTokens.text,
+                lineHeight: 1.3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }} title={taskTitle}>
+                {taskTitle}
+              </div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={toggleExpanded}
+            title={expanded ? 'Janela menor' : 'Janela maior para ler mais texto'}
+            style={{
+              flexShrink: 0,
+              background: 'rgba(255,255,255,0.06)',
+              border: `1px solid ${stepzTokens.border}`,
+              color: stepzTokens.textDim,
+              fontSize: 11,
+              fontWeight: 600,
+              padding: isMobile ? '8px 10px' : '7px 12px',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontFamily: stepzTokens.font,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {expanded ? '⊟ Reduzir' : '⊞ Ampliar'}
+          </button>
+        </div>
+        <textarea
+          ref={taRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Escreva os detalhes desta task…"
+          style={{
+            ...modalInputStyle,
+            width: '100%',
+            boxSizing: 'border-box',
+            flex: 1,
+            minHeight: isMobile ? (expanded ? 'min(55vh, 420px)' : 160) : 120,
+            minWidth: 0,
+            resize: 'none',
+            fontSize: isMobile ? 14 : 15,
+            lineHeight: 1.55,
+            marginBottom: isMobile ? 14 : 16,
+            overflow: 'auto',
+          }}
+        />
+        <div style={{
+          display: 'flex',
+          flexDirection: isMobile ? 'column-reverse' : 'row',
+          gap: isMobile ? 8 : 10,
+          justifyContent: 'flex-end',
+          flexShrink: 0,
+        }}>
+          <button type="button" onClick={onClose} style={{
+            ...modalGhostBtnStyle,
+            width: isMobile ? '100%' : undefined,
+            padding: isMobile ? '10px 14px' : undefined,
+          }}>
+            cancelar
+          </button>
+          <button type="button" onClick={onSave} style={{
+            ...modalPrimaryBtnStyle,
+            width: isMobile ? '100%' : undefined,
+            padding: isMobile ? '10px 14px' : undefined,
+          }}>
+            salvar
+          </button>
+        </div>
+        {!isMobile ? (
+          <div style={{ marginTop: 10, fontSize: 10, color: stepzTokens.textFaint, textAlign: 'right', flexShrink: 0 }}>
+            Arraste o canto da janela para redimensionar · Ctrl+Enter salvar · Esc fechar
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  if (typeof document === 'undefined') return null;
+  const RD = typeof ReactDOM !== 'undefined' ? ReactDOM : window.ReactDOM;
+  if (!RD || typeof RD.createPortal !== 'function') return panel;
+  return RD.createPortal(panel, document.body);
+}
+
 function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEditTask, taskTagColors = {}, onTagsPopoverOpen, onPriorityPopoverOpen, onStatusPopoverOpen, dragHandleProps, isDragging, setItemRef }) {
   const gridCtx = useContext(TaskGridColumnsContext);
   const { isMobile } = useStepzViewport();
@@ -5149,8 +5353,11 @@ function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEd
         </div>
 
         <div
-          onClick={() => startEdit('description', task.description || '')}
-          title={task.description || ''}
+          onClick={(e) => {
+            e.stopPropagation();
+            startEdit('description', task.description || '');
+          }}
+          title={task.description || 'Clique para ver e editar a descrição'}
           style={{
             fontSize: 10,
             color: task.description ? stepzTokens.textDim : stepzTokens.textFaint,
@@ -5174,22 +5381,15 @@ function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEd
         </div>
       </div>
 
-      {editingField === 'description' && (
-        <div style={{
-          padding: '8px 10px 10px',
-          borderBottom: `1px solid ${stepzTokens.border}`,
-          background: 'rgba(255,255,255,0.02)',
-        }}>
-          <div style={{ marginBottom: 6 }}>
-            <textarea value={draftValue} onChange={e => setDraftValue(e.target.value)}
-              style={{ ...modalInputStyle, minHeight: 70, resize: 'vertical', fontSize: 12 }} />
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button type="button" onClick={cancelEdit} style={{ ...modalGhostBtnStyle, padding: '5px 10px', fontSize: 11 }}>cancelar</button>
-            <button type="button" onClick={saveEdit} style={{ ...modalPrimaryBtnStyle, padding: '5px 10px', fontSize: 11 }}>salvar</button>
-          </div>
-        </div>
-      )}
+      {editingField === 'description' ? (
+        <TaskDescriptionEditorModal
+          taskTitle={task.title}
+          value={draftValue}
+          onChange={setDraftValue}
+          onSave={saveEdit}
+          onClose={cancelEdit}
+        />
+      ) : null}
     </div>
   );
 }
