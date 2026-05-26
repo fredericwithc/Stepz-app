@@ -11,10 +11,16 @@ const INSPIRATION_QUOTES = [
   { q: "It's okay to feel strong one day and overwhelmed the next. You are human. You are not meant to feel the same every day", a: '' },
   { q: "No matter your age, you'll always wish you started younger. But today is the youngest you'll ever be. So start today!", a: '' },
   { q: "Maybe the point was never permanence, but presence. To be here, now, with all that we are.", a: '' },
-  { q: "I don't disappear to be rude. I disappear to breath, think and reset. Time alone makes me better company later.", a: 'L. Buscaglia' },
+  { q: "I don't disappear to be rude. I disappear to breath, think and reset. Time alone makes me better company later.", a: '' },
   { q: "The person who always takes care of everyone else, needs to be taken care of too.", a: '' },
-  { q: "The most valuable thing you can give someone is your time.", a: 'Arthur Ashe' },
+  { q: "The most valuable thing you can give someone is your time.", a: '' },
   { q: "If you are going to overthink, then overthink the positives. Overthink the best outcome. Overthink how good this life could be.", a: '' },
+  { q: "Stop rushing. Don't waste your time holding on to the things you cannot change. If it's out of your control, let it be out of your mind.", a: '' },
+  { q: "The amount of good things in your life, depends on your ability to notice them.", a: '' },
+  { q: "You will lose yourself more than once, you will find yourself more than once too. That is the journey. To forget. To remember. To begin again.", a: '' },
+  { q: "You have fought battles that no one knows about. And you're still going. That matters.", a: '' },
+  { q: "If you can overthink the worst, why can't you overthink the best?", a: '' },
+  { q: "Forgive yourself for not knowing earlier what only time could teach", a: '' },
 ];
 
 /** Dias de calendário entre duas datas ISO (YYYY-MM-DD), fim inclusivo em relação ao início. */
