@@ -100,11 +100,10 @@ function colorForTaskTag(tag, tagColors) {
  * Recorrência mensal de tasks.
  * Schema (campos opcionais em cada task):
  *   recurrence: 'monthly' | null
- *   recurrenceIntervalDays: number (default 30)
- *   recurrenceLeadDays: number (default 7)
- *   recurrenceLastDoneAt: ISO string da última conclusão (gravado em complete/updateTask)
- * Auto-reabertura preserva o degrau anterior; reabertura manual (uncomplete / updateTask
- * ramo 'reopening') continua a remover o último degrau como antes.
+ *   recurrenceIntervalDays: number (default 30) — avanço do prazo no ciclo seguinte
+ *   recurrenceLeadDays: number (default 7) — reabre N dias antes do dueDate
+ *   recurrenceLastDoneAt: ISO da última conclusão (fallback se não houver prazo)
+ * Auto-reabertura preserva degraus; reabertura manual remove o último degrau como antes.
  * ============================================================================= */
 const RECURRING_DEFAULT_INTERVAL = 30;
 const RECURRING_DEFAULT_LEAD = 7;
@@ -113,41 +112,144 @@ function isTaskRecurringMonthly(t) {
   return !!(t && t.recurrence === 'monthly');
 }
 
-/** Timestamp (ms) em que a task deve auto-reabrir, ou null se não aplicável. */
-function computeRecurringReopenAt(t) {
-  if (!isTaskRecurringMonthly(t)) return null;
-  if (!t.recurrenceLastDoneAt) return null;
-  const last = Date.parse(t.recurrenceLastDoneAt);
-  if (!Number.isFinite(last)) return null;
-  const interval = Number.isFinite(t.recurrenceIntervalDays) && t.recurrenceIntervalDays > 0
+/** Task concluída (boolean ou status legado). */
+function isTaskEffectivelyDone(t) {
+  return !!(t && (t.done || t.status === 'done'));
+}
+
+/** Hoje no fuso local (YYYY-MM-DD), alinhado a formatDate / inputs date. */
+function calendarTodayKey(nowMs) {
+  const d = nowMs != null ? new Date(nowMs) : new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function normalizeDueDateKey(due) {
+  const key = String(due || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : '';
+}
+
+function recurringIntervalDays(t) {
+  return Number.isFinite(t?.recurrenceIntervalDays) && t.recurrenceIntervalDays > 0
     ? t.recurrenceIntervalDays
     : RECURRING_DEFAULT_INTERVAL;
-  const lead = Number.isFinite(t.recurrenceLeadDays) && t.recurrenceLeadDays >= 0
+}
+
+function recurringLeadDays(t) {
+  return Number.isFinite(t?.recurrenceLeadDays) && t.recurrenceLeadDays >= 0
     ? t.recurrenceLeadDays
     : RECURRING_DEFAULT_LEAD;
-  const days = Math.max(0, interval - lead);
-  return last + days * 24 * 60 * 60 * 1000;
+}
+
+function addCalendarDaysToDateKey(dateKey, delta) {
+  const key = String(dateKey || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return null;
+  const d = new Date(`${key}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Próximo prazo estritamente após minAfterKey, somando intervalDays em dias de calendário. */
+function nextDueKeyAfter(dueKey, minAfterKey, intervalDays) {
+  const interval = intervalDays > 0 ? intervalDays : RECURRING_DEFAULT_INTERVAL;
+  let cur = String(dueKey || '').slice(0, 10);
+  const minAfter = String(minAfterKey || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cur)) return minAfter;
+  let guard = 0;
+  while (cur <= minAfter && guard < 120) {
+    const next = addCalendarDaysToDateKey(cur, interval);
+    if (!next) return minAfter;
+    cur = next;
+    guard += 1;
+  }
+  return cur;
 }
 
 /**
- * Reabre todas as tasks recorrentes vencidas, preservando state.steps.
- * Retorna { changed, nextTasks }. Não muta o argumento.
+ * Dia de calendário (YYYY-MM-DD) em que a task concluída volta a "a fazer".
+ * Com prazo: dueDate − leadDays. Sem prazo: última conclusão + (interval − lead).
+ */
+function computeRecurringReopenDateKey(t) {
+  if (!isTaskRecurringMonthly(t)) return null;
+  const lead = recurringLeadDays(t);
+  const due = normalizeDueDateKey(t.dueDate);
+  if (due) {
+    return addCalendarDaysToDateKey(due, -lead);
+  }
+  if (!t.recurrenceLastDoneAt) return null;
+  const lastKey = String(t.recurrenceLastDoneAt).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(lastKey)) return null;
+  const interval = recurringIntervalDays(t);
+  return addCalendarDaysToDateKey(lastKey, Math.max(0, interval - lead));
+}
+
+/** Timestamp (ms) no início do dia de reabertura (UTC), ou null. */
+function computeRecurringReopenAt(t) {
+  const key = computeRecurringReopenDateKey(t);
+  if (!key) return null;
+  return Date.parse(`${key}T00:00:00Z`);
+}
+
+/** Campos de recorrência ao concluir — avança o prazo para o ciclo seguinte quando aplicável. */
+function patchRecurringOnComplete(task, completedAtIso) {
+  const completedKey = String(completedAtIso || '').slice(0, 10);
+  const patch = { recurrenceLastDoneAt: completedAtIso };
+  const due = normalizeDueDateKey(task.dueDate);
+  if (!due) return patch;
+  const reopenKey = computeRecurringReopenDateKey(task);
+  const interval = recurringIntervalDays(task);
+  if (reopenKey && completedKey >= reopenKey) {
+    patch.dueDate = nextDueKeyAfter(due, due, interval);
+  } else if (due <= completedKey) {
+    patch.dueDate = nextDueKeyAfter(due, completedKey, interval);
+  }
+  return patch;
+}
+
+/**
+ * Reabre tasks recorrentes quando hoje >= (prazo − leadDays), preservando state.steps.
+ * Atualiza prazo se ainda estiver no passado.
  */
 function autoReopenRecurringDue(state, nowMs) {
   if (!state || !Array.isArray(state.tasks) || state.tasks.length === 0) {
     return { changed: false, nextTasks: state?.tasks || [] };
   }
+  const today = calendarTodayKey(nowMs);
   let changed = false;
   const nextTasks = state.tasks.map((t) => {
     if (!isTaskRecurringMonthly(t)) return t;
-    if (!t.done) return t;
-    const reopenAt = computeRecurringReopenAt(t);
-    if (reopenAt == null) return t;
-    if (nowMs < reopenAt) return t;
+    if (!isTaskEffectivelyDone(t)) return t;
+    const reopenKey = computeRecurringReopenDateKey(t);
+    if (!reopenKey || today < reopenKey) return t;
     changed = true;
-    return { ...t, done: false, status: 'todo' };
+    const due = normalizeDueDateKey(t.dueDate);
+    let nextDue = t.dueDate;
+    if (due && due <= today) {
+      nextDue = nextDueKeyAfter(due, today, recurringIntervalDays(t));
+    }
+    return {
+      ...t,
+      done: false,
+      status: 'todo',
+      dueDate: nextDue,
+      recurrenceLastDoneAt: undefined,
+    };
   });
   return { changed, nextTasks };
+}
+
+/** Aplica auto-reabertura (carga, sync remoto, conclusão, timer). */
+function applyAutoReopenRecurringState(state, nowMs) {
+  const r = autoReopenRecurringDue(state, nowMs ?? Date.now());
+  return r.changed ? { ...state, tasks: r.nextTasks } : state;
+}
+
+/** @deprecated alias */
+function withAutoReopenRecurring(state, nowMs) {
+  return applyAutoReopenRecurringState(state, nowMs);
 }
 
 /** Cor do projeto: override em `projectColors` ou paleta determinística (definida em stairs.jsx). */
@@ -652,7 +754,7 @@ function App() {
       setState(defaultState());
       return undefined;
     }
-    const local = loadState(userKey);
+    const local = applyAutoReopenRecurringState(loadState(userKey));
     lastSyncedJsonRef.current = '';
     setState(local);
     const bootstrapTag = Symbol('bootstrap');
@@ -674,7 +776,7 @@ function App() {
           clearTimeout(remoteSaveTimerRef.current);
           remoteSaveTimerRef.current = null;
         }
-        setState(res.state);
+        setState(applyAutoReopenRecurringState(res.state));
         return;
       }
       if (res && res.ok && !res.found && typeof rs.save === 'function') {
@@ -684,7 +786,7 @@ function App() {
           clearTimeout(remoteSaveTimerRef.current);
           remoteSaveTimerRef.current = null;
         }
-        try { await rs.save(local); } catch (_) { /* swallow — local continua válido */ }
+        try { await rs.save(applyAutoReopenRecurringState(local)); } catch (_) { /* swallow — local continua válido */ }
       }
     })();
     return undefined;
@@ -719,14 +821,11 @@ function App() {
     };
   }, [state]);
 
-  // Auto-reabertura de tasks recorrentes mensais: boot, ao voltar à tab e a cada 5 min.
+  // Auto-reabertura de tasks recorrentes: ao voltar à tab e a cada 5 min (carga já aplica no bootstrap).
   useEffect(() => {
     if (!session) return undefined;
     if (!activeUserKeyRef.current) return undefined;
-    const tick = () => setState((s) => {
-      const r = autoReopenRecurringDue(s, Date.now());
-      return r.changed ? { ...s, tasks: r.nextTasks } : s;
-    });
+    const tick = () => setState((s) => applyAutoReopenRecurringState(s));
     tick();
     const onVis = () => { if (!document.hidden) tick(); };
     document.addEventListener('visibilitychange', onVis);
@@ -764,16 +863,16 @@ function App() {
         setCelebrate({ count: newCount, isLevel: false, brief: true });
       }
       const nowIso = new Date().toISOString();
-      return {
+      return withAutoReopenRecurring({
         ...s,
         tasks: s.tasks.map(x => {
           if (x.id !== taskId) return x;
           const patched = { ...x, done: true, status: 'done' };
-          if (isTaskRecurringMonthly(x)) patched.recurrenceLastDoneAt = nowIso;
+          if (isTaskRecurringMonthly(x)) Object.assign(patched, patchRecurringOnComplete(x, nowIso));
           return patched;
         }),
         steps: newSteps,
-      };
+      });
     });
   };
 
@@ -962,7 +1061,7 @@ function App() {
           ...(merged.priority ? { priority: merged.priority } : {}),
           ...(merged.dueDate ? { dueDate: merged.dueDate } : {}),
         }];
-        if (isTaskRecurringMonthly(merged)) merged.recurrenceLastDoneAt = completedAt;
+        if (isTaskRecurringMonthly(merged)) Object.assign(merged, patchRecurringOnComplete(merged, completedAt));
         const newCount = nextSteps.length;
         if (newCount % 10 === 0 || newCount % STEPS_PER_LEVEL === 0) {
           celebration = { count: newCount, isLevel: newCount % STEPS_PER_LEVEL === 0 };
@@ -986,12 +1085,12 @@ function App() {
         if (!stillUsed) projectOrder = projectOrder.filter(p => p !== prevProject);
       }
 
-      return {
+      return withAutoReopenRecurring({
         ...s,
         tasks: nextTasks,
         steps: nextSteps,
         projectOrder,
-      };
+      });
     });
   };
 
@@ -5112,7 +5211,7 @@ function TaskItem({ task, onComplete, onUncomplete, onDelete, onUpdateTask, onEd
           </span>
           {isTaskRecurringMonthly(task) && (
             <span
-              title="Repete a cada 30 dias — reabre 7 dias antes"
+              title="Repete mensalmente — reabre 7 dias antes do prazo"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -5972,7 +6071,7 @@ function RecurringMonthlyToggle({ checked, onChange }) {
           ↻ Repete mensalmente
         </span>
         <span style={{ fontSize: 11, color: stepzTokens.textDim, lineHeight: 1.4 }}>
-          Reabre automaticamente 7 dias antes do próximo ciclo (a cada 30 dias). Os degraus anteriores são preservados.
+          Reabre automaticamente 7 dias antes da data de prazo. O prazo avança ~30 dias ao concluir cada ciclo. Os degraus anteriores são preservados.
         </span>
       </span>
     </label>

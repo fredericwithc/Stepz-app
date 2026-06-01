@@ -21,6 +21,12 @@ const INSPIRATION_QUOTES = [
   { q: "You have fought battles that no one knows about. And you're still going. That matters.", a: '' },
   { q: "If you can overthink the worst, why can't you overthink the best?", a: '' },
   { q: "Forgive yourself for not knowing earlier what only time could teach", a: '' },
+  { q: "Imagine reading a book with no way to turn back the page, how carefully would you read it? That's life.", a: '' },
+  { q: "Maybe the secret to having a good life is realizing how good it already is.", a: '' },
+  { q: "Some seasons of life will change you, and that's okay, we aren't meant to stay the same.", a: '' },
+  { q: "You will get there. But right now you are here. And here is beautiful.", a: '' },
+  { q: "There are moments where silence says more than words ever could.", a: '' },
+  { q: "A big part of who I am, is who I'm not anymore.", a: '' },
 ];
 
 /** Dias de calendário entre duas datas ISO (YYYY-MM-DD), fim inclusivo em relação ao início. */
