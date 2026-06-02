@@ -27,6 +27,7 @@ const INSPIRATION_QUOTES = [
   { q: "You will get there. But right now you are here. And here is beautiful.", a: '' },
   { q: "There are moments where silence says more than words ever could.", a: '' },
   { q: "A big part of who I am, is who I'm not anymore.", a: '' },
+  { q: "Be the reason someone believes in goodness again. Not because you're perfect. But because you chose to be kind when you had every reason not to.", a: '' },
 ];
 
 /** Dias de calendário entre duas datas ISO (YYYY-MM-DD), fim inclusivo em relação ao início. */
