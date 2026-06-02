@@ -599,6 +599,7 @@ function PostitCard({ postit, isEditing, onEdit, onBlur, onChange, onDelete, set
   const cardElRef = React.useRef(null);
   const itemsWrapRef = React.useRef(null);
   const resizeDragActiveRef = React.useRef(false);
+  const pendingFocusItemIdRef = React.useRef(null);
 
   const setCardRef = React.useCallback((el) => {
     cardElRef.current = el;
@@ -718,12 +719,43 @@ function PostitCard({ postit, isEditing, onEdit, onBlur, onChange, onDelete, set
   const updateItem = (itemId, patch) => {
     onChange({ items: postit.items.map(it => it.id === itemId ? { ...it, ...patch } : it) });
   };
-  const addItem = () => {
-    onChange({ items: [...postit.items, { id: cryptoId(), text: '' }] });
+  const focusItemEditor = React.useCallback((itemId) => {
+    const root = cardElRef.current;
+    if (!root) return;
+    const el = root.querySelector(`[data-postit-item-editor-id="${String(itemId)}"]`);
+    if (!el || typeof el.focus !== 'function') return;
+    el.focus();
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    } catch (_) { /* ignore */ }
+  }, []);
+
+  const addItemBelow = (afterItemId) => {
+    const newId = cryptoId();
+    pendingFocusItemIdRef.current = newId;
+    const items = Array.isArray(postit.items) ? postit.items : [];
+    const idx = items.findIndex((it) => it.id === afterItemId);
+    const insertAt = idx >= 0 ? idx + 1 : items.length;
+    const next = [...items.slice(0, insertAt), { id: newId, text: '' }, ...items.slice(insertAt)];
+    onChange({ items: next });
   };
   const deleteItem = (itemId) => {
     onChange({ items: postit.items.filter(it => it.id !== itemId) });
   };
+
+  React.useEffect(() => {
+    const nextId = pendingFocusItemIdRef.current;
+    if (!nextId) return;
+    pendingFocusItemIdRef.current = null;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => focusItemEditor(nextId));
+    });
+  }, [postit.items, focusItemEditor]);
 
   const resizeHudLabel = resizeHud
     ? (() => {
@@ -960,7 +992,7 @@ function PostitCard({ postit, isEditing, onEdit, onBlur, onChange, onDelete, set
             color={color}
             onChange={patch => updateItem(it.id, patch)}
             onDelete={() => deleteItem(it.id)}
-            onAddBelow={addItem}
+            onAddBelow={() => addItemBelow(it.id)}
             onFocus={onEdit}
             onCommentAnchorCreated={({ commentId, itemId, preview }) => {
               const next = [...(postit.comments || []), {
@@ -977,7 +1009,7 @@ function PostitCard({ postit, isEditing, onEdit, onBlur, onChange, onDelete, set
         ))}
       </div>
 
-      <button onClick={addItem}
+      <button onClick={() => addItemBelow(postit.items?.[postit.items.length - 1]?.id)}
         style={{
           marginTop: 8, background: 'transparent', border: 'none',
           color: color.accent, opacity: 0.55, fontSize: 11,
@@ -1245,6 +1277,7 @@ function PostitItem({ item, color, onChange, onDelete, onAddBelow, onFocus, onCo
         }}/>
         <div
           ref={editorRef}
+          data-postit-item-editor-id={item.id}
           contentEditable
           suppressContentEditableWarning
           role="textbox"
