@@ -117,15 +117,6 @@ function isTaskEffectivelyDone(t) {
   return !!(t && (t.done || t.status === 'done'));
 }
 
-/** Hoje no fuso local (YYYY-MM-DD), alinhado a formatDate / inputs date. */
-function calendarTodayKey(nowMs) {
-  const d = nowMs != null ? new Date(nowMs) : new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 function normalizeDueDateKey(due) {
   const key = String(due || '').slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : '';
@@ -143,15 +134,6 @@ function recurringLeadDays(t) {
     : RECURRING_DEFAULT_LEAD;
 }
 
-function addCalendarDaysToDateKey(dateKey, delta) {
-  const key = String(dateKey || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return null;
-  const d = new Date(`${key}T12:00:00Z`);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setUTCDate(d.getUTCDate() + delta);
-  return d.toISOString().slice(0, 10);
-}
-
 /** Próximo prazo estritamente após minAfterKey, somando intervalDays em dias de calendário. */
 function nextDueKeyAfter(dueKey, minAfterKey, intervalDays) {
   const interval = intervalDays > 0 ? intervalDays : RECURRING_DEFAULT_INTERVAL;
@@ -160,7 +142,7 @@ function nextDueKeyAfter(dueKey, minAfterKey, intervalDays) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(cur)) return minAfter;
   let guard = 0;
   while (cur <= minAfter && guard < 120) {
-    const next = addCalendarDaysToDateKey(cur, interval);
+    const next = addCalendarDays(cur, interval);
     if (!next) return minAfter;
     cur = next;
     guard += 1;
@@ -177,25 +159,25 @@ function computeRecurringReopenDateKey(t) {
   const lead = recurringLeadDays(t);
   const due = normalizeDueDateKey(t.dueDate);
   if (due) {
-    return addCalendarDaysToDateKey(due, -lead);
+    return addCalendarDays(due, -lead);
   }
   if (!t.recurrenceLastDoneAt) return null;
-  const lastKey = String(t.recurrenceLastDoneAt).slice(0, 10);
+  const lastKey = dateKeyFromIso(t.recurrenceLastDoneAt);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(lastKey)) return null;
   const interval = recurringIntervalDays(t);
-  return addCalendarDaysToDateKey(lastKey, Math.max(0, interval - lead));
+  return addCalendarDays(lastKey, Math.max(0, interval - lead));
 }
 
-/** Timestamp (ms) no início do dia de reabertura (UTC), ou null. */
+/** Timestamp (ms) no início do dia de reabertura (local), ou null. */
 function computeRecurringReopenAt(t) {
   const key = computeRecurringReopenDateKey(t);
   if (!key) return null;
-  return Date.parse(`${key}T00:00:00Z`);
+  return Date.parse(`${key}T00:00:00`);
 }
 
 /** Campos de recorrência ao concluir — avança o prazo para o ciclo seguinte quando aplicável. */
 function patchRecurringOnComplete(task, completedAtIso) {
-  const completedKey = String(completedAtIso || '').slice(0, 10);
+  const completedKey = dateKeyFromIso(completedAtIso);
   const patch = { recurrenceLastDoneAt: completedAtIso };
   const due = normalizeDueDateKey(task.dueDate);
   if (!due) return patch;
@@ -217,7 +199,7 @@ function autoReopenRecurringDue(state, nowMs) {
   if (!state || !Array.isArray(state.tasks) || state.tasks.length === 0) {
     return { changed: false, nextTasks: state?.tasks || [] };
   }
-  const today = calendarTodayKey(nowMs);
+  const today = calendarDateKey(new Date(nowMs ?? Date.now()));
   let changed = false;
   const nextTasks = state.tasks.map((t) => {
     if (!isTaskRecurringMonthly(t)) return t;
@@ -1246,7 +1228,7 @@ function App() {
           setCelebrate({ count: newCount, isLevel: false, brief: true });
         }
       } else if (removeStep) {
-        const idx = [...s.steps].map((st, i) => ({ st, i })).reverse().find(({ st }) => st.habitId === h.id && st.completedAt.slice(0, 10) === target)?.i;
+        const idx = [...s.steps].map((st, i) => ({ st, i })).reverse().find(({ st }) => st.habitId === h.id && dateKeyFromIso(st.completedAt) === target)?.i;
         if (idx != null) newSteps = s.steps.filter((_, i) => i !== idx);
       }
       return {
@@ -1426,7 +1408,7 @@ function App() {
 
   // Stats
   const totalSteps = state.steps.length;
-  const todaySteps = state.steps.filter(s => s.completedAt.slice(0, 10) === todayStr()).length;
+  const todaySteps = state.steps.filter(s => dateKeyFromIso(s.completedAt) === todayStr()).length;
   const currentLevel = Math.floor(totalSteps / STEPS_PER_LEVEL) + 1;
   const dayStreak = computeDayStreak(state.steps);
   const projectOptions = useMemo(
@@ -5762,9 +5744,7 @@ function HabitFullRow({ habit, onToggle, onToggleDate, onDelete, onEdit, categor
   const slotDays = 10;
   const days = [];
   for (let i = slotDays - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const ds = d.toISOString().slice(0, 10);
+    const ds = addCalendarDays(today, -i);
     days.push({
       date: ds,
       done: habit.history.includes(ds),
@@ -6874,20 +6854,20 @@ function CelebrationToast({ count, isLevel, brief, goalComplete, goalTitle, onCl
 // ── Helpers ──
 function computeDayStreak(steps) {
   if (steps.length === 0) return 0;
-  const dates = new Set(steps.map(s => s.completedAt.slice(0, 10)));
+  const dates = new Set(steps.map(s => dateKeyFromIso(s.completedAt)).filter(Boolean));
+  const today = todayStr();
   let streak = 0;
-  let d = new Date();
-  while (dates.has(d.toISOString().slice(0, 10))) {
+  let key = today;
+  while (dates.has(key)) {
     streak++;
-    d.setDate(d.getDate() - 1);
+    key = addCalendarDays(key, -1);
+    if (!key) break;
   }
-  // If today is not done but yesterday is, still count from yesterday
   if (streak === 0) {
-    d = new Date();
-    d.setDate(d.getDate() - 1);
-    while (dates.has(d.toISOString().slice(0, 10))) {
+    key = addCalendarDays(today, -1);
+    while (key && dates.has(key)) {
       streak++;
-      d.setDate(d.getDate() - 1);
+      key = addCalendarDays(key, -1);
     }
   }
   return streak;
@@ -6895,18 +6875,19 @@ function computeDayStreak(steps) {
 function computeHabitStreak(history) {
   if (!history || history.length === 0) return 0;
   const set = new Set(history);
+  const today = todayStr();
   let streak = 0;
-  let d = new Date();
-  while (set.has(d.toISOString().slice(0, 10))) {
+  let key = today;
+  while (set.has(key)) {
     streak++;
-    d.setDate(d.getDate() - 1);
+    key = addCalendarDays(key, -1);
+    if (!key) break;
   }
   if (streak === 0) {
-    d = new Date();
-    d.setDate(d.getDate() - 1);
-    while (set.has(d.toISOString().slice(0, 10))) {
+    key = addCalendarDays(today, -1);
+    while (key && set.has(key)) {
       streak++;
-      d.setDate(d.getDate() - 1);
+      key = addCalendarDays(key, -1);
     }
   }
   return streak;
@@ -6919,11 +6900,9 @@ function formatDate(iso) {
   const d = new Date(`${key}T12:00:00`);
   if (Number.isNaN(d.getTime())) return '—';
   const today = todayStr();
-  const y = new Date();
-  y.setDate(y.getDate() - 1);
-  const ystr = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+  const yesterday = addCalendarDays(today, -1);
   if (key === today) return 'Hoje';
-  if (key === ystr) return 'Ontem';
+  if (key === yesterday) return 'Ontem';
   return d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 

@@ -63,7 +63,34 @@ function mergeCategoryLists(base, extra) {
 /** Alias legado — lista base (seed). Preferir `state.categories` no app. */
 const CATEGORIES = BASE_CATEGORIES;
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+/** Chave de calendário local YYYY-MM-DD (fuso do dispositivo). */
+function calendarDateKey(d = new Date()) {
+  const dt = d instanceof Date && !Number.isNaN(d.getTime()) ? d : new Date();
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+const todayStr = () => calendarDateKey();
+
+/** Dia local de um instante ISO (degraus, hábitos, comparações). */
+function dateKeyFromIso(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return calendarDateKey(d);
+}
+
+/** Soma dias no calendário local a partir de uma chave YYYY-MM-DD. */
+function addCalendarDays(dateKey, delta) {
+  const key = String(dateKey || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return '';
+  const d = new Date(`${key}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() + delta);
+  return calendarDateKey(d);
+}
 
 function loadState(userKey) {
   const storageKey = lsKeyForUser(userKey);
@@ -110,9 +137,7 @@ function loadState(userKey) {
 }
 
 function dateOffsetStr(offsetDays) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + offsetDays);
-  return d.toISOString().slice(0, 10);
+  return addCalendarDays(todayStr(), offsetDays);
 }
 
 /** Metas de demonstração — também usadas quando o estado guardado tem lista vazia. */
@@ -1031,6 +1056,6 @@ function formatRelative(iso) {
 
 Object.assign(window, {
   LiveStairs, LEVEL_META, STEPS_PER_LEVEL, BASE_CATEGORIES, CATEGORIES,
-  loadState, saveState, defaultState, cryptoId, todayStr, formatRelative,
+  loadState, saveState, defaultState, cryptoId, todayStr, calendarDateKey, dateKeyFromIso, addCalendarDays, formatRelative,
   mergeCategoryLists,
 });
