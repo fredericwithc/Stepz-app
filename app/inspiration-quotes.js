@@ -28,6 +28,9 @@ const INSPIRATION_QUOTES = [
   { q: "There are moments where silence says more than words ever could.", a: '' },
   { q: "A big part of who I am, is who I'm not anymore.", a: '' },
   { q: "Be the reason someone believes in goodness again. Not because you're perfect. But because you chose to be kind when you had every reason not to.", a: '' },
+  { q: "You will never taste victory if you fear the start.", a: '' },
+  { q: "Hesitation is the enemy of success, and inaction is the grave of potential. The beginning is the gateway to everything you can achieve.", a: '' },
+  { q: "You are allowed to rest, to heal, to begin again. ", a: '' },
 ];
 
 /** Dias de calendário entre duas datas ISO (YYYY-MM-DD), fim inclusivo em relação ao início. */
