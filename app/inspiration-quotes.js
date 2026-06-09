@@ -34,6 +34,7 @@ const INSPIRATION_QUOTES = [
   { q: "You've made it through so much you thought would break you. But you are here. You made it this far. Don't forget how far you've come.", a: '' },
   { q: "Stop expecting everyone to have the same heart as you do.", a: '' },
   { q: "Just in case no one reminded you today, you are rare, you are valuable. You matter more than you think.", a: '' },
+  { q: "Don't forget to imagine the best case scenario, too.", a: '' },
 ];
 
 /** Dias de calendário entre duas datas ISO (YYYY-MM-DD), fim inclusivo em relação ao início. */
