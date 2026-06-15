@@ -35,6 +35,12 @@ const INSPIRATION_QUOTES = [
   { q: "Stop expecting everyone to have the same heart as you do.", a: '' },
   { q: "Just in case no one reminded you today, you are rare, you are valuable. You matter more than you think.", a: '' },
   { q: "Don't forget to imagine the best case scenario, too.", a: '' },
+  { q: "Everything is a win when the goal is the experience.", a: '' },
+  { q: "Self-worth isn't something that someone gives to you, which means it's not something they can take away either.", a: '' },
+  { q: "You already know what to do, you're just negotiating with comfort.", a: '' },
+  { q: "Never regret having a big heart. You didn't lose by giving too much, they lost by not knowing how to keep it.", a: '' },
+  { q: "Life is only as good as your mindset. A negative mind will never give you a positive life.", a: '' },
+  { q: "Make sure to include yourself on the list of things you need to take care of this week, ok?", a: '' },
 ];
 
 /** Dias de calendário entre duas datas ISO (YYYY-MM-DD), fim inclusivo em relação ao início. */
