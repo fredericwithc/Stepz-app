@@ -26,6 +26,7 @@ const INSPIRATION_QUOTES = [
   { q: "Some seasons of life will change you, and that's okay, we aren't meant to stay the same.", a: '' },
   { q: "You will get there. But right now you are here. And here is beautiful.", a: '' },
   { q: "There are moments where silence says more than words ever could.", a: '' },
+  { q: "If you don't ask, the answer is always no.", a: '' },
   { q: "A big part of who I am, is who I'm not anymore.", a: '' },
   { q: "Be the reason someone believes in goodness again. Not because you're perfect. But because you chose to be kind when you had every reason not to.", a: '' },
   { q: "You will never taste victory if you fear the start.", a: '' },
@@ -38,9 +39,18 @@ const INSPIRATION_QUOTES = [
   { q: "Everything is a win when the goal is the experience.", a: '' },
   { q: "Self-worth isn't something that someone gives to you, which means it's not something they can take away either.", a: '' },
   { q: "You already know what to do, you're just negotiating with comfort.", a: '' },
+  { q: "If you don't step forward, then you will always be in the same place.", a: '' },
   { q: "Never regret having a big heart. You didn't lose by giving too much, they lost by not knowing how to keep it.", a: '' },
   { q: "Life is only as good as your mindset. A negative mind will never give you a positive life.", a: '' },
   { q: "Make sure to include yourself on the list of things you need to take care of this week, ok?", a: '' },
+  { q: "Reminder: It takes time..", a: '' },
+  { q: "Maybe we should just let things be, let people go, don't chase answers, don't fight for closure and never expect an explanation.", a: '' },
+  { q: "Always be a good person, even if nothing comes back in return.", a: '' },
+  { q: "In a world obssessed with more, is easy to forget the beauty of less. A simple life doesn't mean settling. It means being free from endless chase.", a: '' },
+  { q: "Growth isn't always loud or obvious. Sometimes it's simply choosing to keep going, even on the days that feel hard.", a: '' },
+  { q: "Reminder: It takes time..", a: '' },
+  { q: "Being kind is not a strategy, it's a decision. It's not about a reward. It's about who you choose to be, when no one else is watching.", a: '' },
+  { q: "If you do not go after what you want, you'll never have it.", a: '' },
 ];
 
 /** Dias de calendário entre duas datas ISO (YYYY-MM-DD), fim inclusivo em relação ao início. */
