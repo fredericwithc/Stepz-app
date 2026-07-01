@@ -234,6 +234,17 @@ function withAutoReopenRecurring(state, nowMs) {
   return applyAutoReopenRecurringState(state, nowMs);
 }
 
+const REMOTE_SAVE_DEBOUNCE_MS = 300;
+const WAKE_RELOAD_HIDDEN_MS = 60_000;
+const REMOTE_RETRY_DELAYS_MS = [2000, 5000, 10000];
+
+function buildCacheMeta(remoteUpdatedAt, stateJson) {
+  return {
+    remoteUpdatedAt: remoteUpdatedAt || new Date().toISOString(),
+    stateHash: String(stateJson || '').length,
+  };
+}
+
 /** Cor do projeto: override em `projectColors` ou paleta determinística (definida em stairs.jsx). */
 function stepzResolveProjectColor(projectName, projectColors) {
   const map = projectColors && typeof projectColors === 'object' && !Array.isArray(projectColors) ? projectColors : {};
@@ -683,7 +694,11 @@ function App() {
   const [habitModalOpen, setHabitModalOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState(null);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [syncPhase, setSyncPhase] = useState('idle'); // idle | loading | ready | offline
   const { isMobile } = useStepzViewport();
+
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
 
   useEffect(() => {
     const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
@@ -707,115 +722,276 @@ function App() {
     };
   }, []);
 
-  /* Refs auxiliares para sync remoto (Supabase):
-       - lastSyncedJsonRef: último JSON que sabemos estar igual no remoto. Evita ciclo de eco
-         (gravar de volta o que acabámos de receber) e gravações redundantes.
-       - remoteSaveTimerRef: timer do debounce (1.2s) das gravações remotas.
-       - bootstrapInFlightRef: tag por user para abortar bootstraps obsoletos quando se troca de conta. */
+  /* Sync remoto (Supabase = fonte de verdade; localStorage = espelho após sync OK). */
   const lastSyncedJsonRef = useRef('');
   const remoteSaveTimerRef = useRef(null);
+  const remoteRetryTimerRef = useRef(null);
+  const remoteRetryAttemptRef = useRef(0);
   const bootstrapInFlightRef = useRef(null);
+  const pendingRemoteSnapshotRef = useRef(null);
+  const remoteSaveInFlightRef = useRef(false);
+  const lastHiddenAtRef = useRef(null);
+  const performRemoteSaveRef = useRef(null);
 
-  /* Ao mudar de utilizador (login/logout/troca de conta):
-       1) Carrega o cache local imediato (snappy UX).
-       2) Em background pede o estado ao Supabase — se houver, substitui pelo do servidor.
-          Se não houver linha ainda, faz upload do local (bootstrap).
-     Chave local: `stepz.v1:<email>`; chave remota: `user_state.user_id = auth.uid()`. */
+  const clearRemoteSaveTimer = () => {
+    if (remoteSaveTimerRef.current) {
+      clearTimeout(remoteSaveTimerRef.current);
+      remoteSaveTimerRef.current = null;
+    }
+  };
+
+  const clearRemoteRetryTimer = () => {
+    if (remoteRetryTimerRef.current) {
+      clearTimeout(remoteRetryTimerRef.current);
+      remoteRetryTimerRef.current = null;
+    }
+  };
+
+  const scheduleRemoteRetry = (userKey) => {
+    if (!userKey || !pendingRemoteSnapshotRef.current) return;
+    const attempt = remoteRetryAttemptRef.current;
+    const delay = REMOTE_RETRY_DELAYS_MS[Math.min(attempt, REMOTE_RETRY_DELAYS_MS.length - 1)];
+    remoteRetryAttemptRef.current = attempt + 1;
+    clearRemoteRetryTimer();
+    remoteRetryTimerRef.current = setTimeout(() => {
+      remoteRetryTimerRef.current = null;
+      const snap = pendingRemoteSnapshotRef.current;
+      if (snap && performRemoteSaveRef.current) {
+        performRemoteSaveRef.current(snap, userKey);
+      }
+    }, delay);
+  };
+
+  performRemoteSaveRef.current = async (snapshot, userKey) => {
+    const rs = typeof window !== 'undefined' ? window.stepzRemoteState : null;
+    if (!rs || typeof rs.save !== 'function' || !userKey) return false;
+    if (remoteSaveInFlightRef.current) {
+      pendingRemoteSnapshotRef.current = snapshot;
+      return false;
+    }
+    const json = JSON.stringify(snapshot);
+    if (json === lastSyncedJsonRef.current) {
+      pendingRemoteSnapshotRef.current = null;
+      return true;
+    }
+    remoteSaveInFlightRef.current = true;
+    let ok = false;
+    try {
+      const res = await rs.save(snapshot);
+      if (res && res.ok) {
+        lastSyncedJsonRef.current = json;
+        pendingRemoteSnapshotRef.current = null;
+        remoteRetryAttemptRef.current = 0;
+        clearRemoteRetryTimer();
+        if (typeof saveStateCache === 'function') {
+          saveStateCache(userKey, snapshot, buildCacheMeta(res.updatedAt, json));
+        }
+        setSyncPhase((phase) => (phase === 'offline' ? 'ready' : phase));
+        ok = true;
+      } else {
+        pendingRemoteSnapshotRef.current = snapshot;
+        scheduleRemoteRetry(userKey);
+      }
+    } catch (_) {
+      pendingRemoteSnapshotRef.current = snapshot;
+      scheduleRemoteRetry(userKey);
+    } finally {
+      remoteSaveInFlightRef.current = false;
+      const pending = pendingRemoteSnapshotRef.current;
+      if (pending && JSON.stringify(pending) !== json && performRemoteSaveRef.current) {
+        queueMicrotask(() => performRemoteSaveRef.current(pending, userKey));
+      }
+    }
+    return ok;
+  };
+
+  const flushRemoteSave = async () => {
+    const userKey = activeUserKeyRef.current;
+    if (!userKey) return false;
+    const supabaseOn = typeof isSupabaseConfigured === 'function' && isSupabaseConfigured();
+    if (!supabaseOn) return false;
+    clearRemoteSaveTimer();
+    const snap = pendingRemoteSnapshotRef.current || stateRef.current;
+    if (!snap || !performRemoteSaveRef.current) return false;
+    return performRemoteSaveRef.current(snap, userKey);
+  };
+
+  /* Bootstrap: remoto manda; local só espelho ou upload inicial se remoto vazio. */
   useEffect(() => {
     if (!authReady) return;
     const userKey = session && session.email ? session.email.toLowerCase() : null;
     if (userKey === activeUserKeyRef.current) return;
     activeUserKeyRef.current = userKey;
-    if (remoteSaveTimerRef.current) {
-      clearTimeout(remoteSaveTimerRef.current);
-      remoteSaveTimerRef.current = null;
-    }
+    clearRemoteSaveTimer();
+    clearRemoteRetryTimer();
+    remoteRetryAttemptRef.current = 0;
+    pendingRemoteSnapshotRef.current = null;
+
     if (!userKey) {
       lastSyncedJsonRef.current = '';
       bootstrapInFlightRef.current = null;
+      setSyncPhase('idle');
       setState(defaultState());
       return undefined;
     }
+
+    const supabaseOn = typeof isSupabaseConfigured === 'function' && isSupabaseConfigured();
     const local = applyAutoReopenRecurringState(loadState(userKey));
+
+    if (!supabaseOn) {
+      lastSyncedJsonRef.current = JSON.stringify(local);
+      setState(local);
+      setSyncPhase('ready');
+      return undefined;
+    }
+
+    setSyncPhase('loading');
     lastSyncedJsonRef.current = '';
-    setState(local);
     const bootstrapTag = Symbol('bootstrap');
     bootstrapInFlightRef.current = bootstrapTag;
+
     (async () => {
       const rs = typeof window !== 'undefined' ? window.stepzRemoteState : null;
-      if (!rs || typeof rs.load !== 'function') return;
+      if (!rs || typeof rs.load !== 'function') {
+        if (bootstrapInFlightRef.current !== bootstrapTag) return;
+        setState(local);
+        setSyncPhase('offline');
+        return;
+      }
       let res;
       try {
         res = await rs.load();
       } catch (_) {
+        if (bootstrapInFlightRef.current !== bootstrapTag) return;
+        setState(local);
+        setSyncPhase('offline');
         return;
       }
       if (bootstrapInFlightRef.current !== bootstrapTag) return;
       if (activeUserKeyRef.current !== userKey) return;
+
       if (res && res.ok && res.found && res.state && typeof res.state === 'object') {
-        lastSyncedJsonRef.current = JSON.stringify(res.state);
-        if (remoteSaveTimerRef.current) {
-          clearTimeout(remoteSaveTimerRef.current);
-          remoteSaveTimerRef.current = null;
+        const applied = applyAutoReopenRecurringState(res.state);
+        const json = JSON.stringify(res.state);
+        lastSyncedJsonRef.current = json;
+        if (typeof saveStateCache === 'function') {
+          saveStateCache(userKey, applied, buildCacheMeta(res.updatedAt, json));
         }
-        setState(applyAutoReopenRecurringState(res.state));
+        setState(applied);
+        setSyncPhase('ready');
         return;
       }
+
       if (res && res.ok && !res.found && typeof rs.save === 'function') {
-        const localJson = JSON.stringify(local);
-        lastSyncedJsonRef.current = localJson;
-        if (remoteSaveTimerRef.current) {
-          clearTimeout(remoteSaveTimerRef.current);
-          remoteSaveTimerRef.current = null;
-        }
-        try { await rs.save(applyAutoReopenRecurringState(local)); } catch (_) { /* swallow — local continua válido */ }
+        const toUpload = local;
+        try {
+          const saveRes = await rs.save(toUpload);
+          if (saveRes && saveRes.ok) {
+            const json = JSON.stringify(toUpload);
+            lastSyncedJsonRef.current = json;
+            if (typeof saveStateCache === 'function') {
+              saveStateCache(userKey, toUpload, buildCacheMeta(saveRes.updatedAt, json));
+            }
+            setState(toUpload);
+            setSyncPhase('ready');
+            return;
+          }
+        } catch (_) { /* upload inicial falhou */ }
       }
+
+      setState(local);
+      setSyncPhase('offline');
     })();
+
     return undefined;
   }, [authReady, session]);
 
-  /* A cada mudança de estado, persiste:
-       - LOCAL: imediato (cache para offline e arranque rápido).
-       - REMOTO: com debounce de 1.2s — só se o JSON realmente diferir do último que sabemos
-         estar igual ao remoto (evita eco e gravações redundantes). */
+  /* Persistência: remoto com debounce; cache local só após save OK. Sem Supabase → local imediato. */
   useEffect(() => {
     const userKey = activeUserKeyRef.current;
     if (!userKey) return undefined;
-    saveState(userKey, state);
-    const json = JSON.stringify(state);
-    if (remoteSaveTimerRef.current) {
-      clearTimeout(remoteSaveTimerRef.current);
-      remoteSaveTimerRef.current = null;
+
+    const supabaseOn = typeof isSupabaseConfigured === 'function' && isSupabaseConfigured();
+    if (!supabaseOn) {
+      saveState(userKey, state);
+      return undefined;
     }
+
+    if (syncPhase === 'offline') {
+      saveState(userKey, state);
+    }
+
+    if (syncPhase !== 'ready' && syncPhase !== 'offline') return undefined;
+
+    const json = JSON.stringify(state);
     if (json === lastSyncedJsonRef.current) return undefined;
+
+    pendingRemoteSnapshotRef.current = state;
+    clearRemoteSaveTimer();
     const snapshot = state;
     remoteSaveTimerRef.current = setTimeout(() => {
-      const rs = typeof window !== 'undefined' ? window.stepzRemoteState : null;
-      if (!rs || typeof rs.save !== 'function') return;
-      lastSyncedJsonRef.current = json;
-      rs.save(snapshot).catch(() => { /* ignora falhas de rede — local fica como verdade temporária */ });
-    }, 1200);
-    return () => {
-      if (remoteSaveTimerRef.current) {
-        clearTimeout(remoteSaveTimerRef.current);
-        remoteSaveTimerRef.current = null;
+      remoteSaveTimerRef.current = null;
+      if (performRemoteSaveRef.current) {
+        performRemoteSaveRef.current(snapshot, userKey);
       }
-    };
-  }, [state]);
+    }, REMOTE_SAVE_DEBOUNCE_MS);
 
-  // Auto-reabertura de tasks recorrentes: ao voltar à tab e a cada 5 min (carga já aplica no bootstrap).
+    return () => clearRemoteSaveTimer();
+  }, [state, syncPhase]);
+
+  /* Wake / fechar: flush ao esconder; reload após ausência longa; bfcache. */
   useEffect(() => {
     if (!session) return undefined;
     if (!activeUserKeyRef.current) return undefined;
-    const tick = () => setState((s) => applyAutoReopenRecurringState(s));
-    tick();
-    const onVis = () => { if (!document.hidden) tick(); };
-    document.addEventListener('visibilitychange', onVis);
-    const id = setInterval(tick, 5 * 60 * 1000);
-    return () => {
-      document.removeEventListener('visibilitychange', onVis);
-      clearInterval(id);
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        lastHiddenAtRef.current = Date.now();
+        void flushRemoteSave();
+        return;
+      }
+      const hiddenMs = lastHiddenAtRef.current
+        ? Date.now() - lastHiddenAtRef.current
+        : 0;
+      lastHiddenAtRef.current = null;
+      if (hiddenMs >= WAKE_RELOAD_HIDDEN_MS) {
+        void (async () => {
+          await flushRemoteSave();
+          window.location.reload();
+        })();
+        return;
+      }
+      setState((s) => applyAutoReopenRecurringState(s));
     };
+
+    const onPageShow = (e) => {
+      if (e.persisted) window.location.reload();
+    };
+
+    const onPageHide = () => { void flushRemoteSave(); };
+    const onBeforeUnload = () => { void flushRemoteSave(); };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', onPageShow);
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onBeforeUnload);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [session]);
+
+  // Auto-reabertura de tasks recorrentes a cada 5 min (visibility coberto acima).
+  useEffect(() => {
+    if (!session) return undefined;
+    if (!activeUserKeyRef.current) return undefined;
+    const id = setInterval(() => {
+      setState((s) => applyAutoReopenRecurringState(s));
+    }, 5 * 60 * 1000);
+    return () => clearInterval(id);
   }, [session]);
 
   // ── Mutations ──
@@ -1495,6 +1671,22 @@ function App() {
     );
   }
 
+  if (session && syncPhase === 'loading') {
+    return (
+      <div style={{
+        fontFamily: stepzTokens.font,
+        background: stepzTokens.bg,
+        color: stepzTokens.textDim,
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        A sincronizar…
+      </div>
+    );
+  }
+
   return (
     <div style={{
       fontFamily: stepzTokens.font,
@@ -1520,6 +1712,20 @@ function App() {
           setSession(null);
         }}
       />
+      {syncPhase === 'offline' && supabaseOn ? (
+        <div style={{
+          margin: '0 auto',
+          maxWidth: 1200,
+          padding: '8px 16px',
+          fontSize: 12,
+          color: stepzTokens.warn,
+          background: 'rgba(255,180,80,0.08)',
+          borderBottom: `1px solid ${stepzTokens.border}`,
+          textAlign: 'center',
+        }}>
+          Sem ligação ao servidor — a mostrar cache local. As alterações serão enviadas quando a rede voltar.
+        </div>
+      ) : null}
 
       <TaskGridColumnsProvider>
       <div style={{

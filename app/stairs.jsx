@@ -213,6 +213,31 @@ function cryptoId() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 }
 
+/** Chave de meta do cache local (espelho do remoto após sync OK). */
+function lsMetaKeyForUser(userKey) {
+  return `${lsKeyForUser(userKey)}:meta`;
+}
+
+function loadStateMeta(userKey) {
+  try {
+    const raw = localStorage.getItem(lsMetaKeyForUser(userKey));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Atualiza cache local + meta só após load/save remoto bem-sucedido. */
+function saveStateCache(userKey, s, meta) {
+  saveState(userKey, s);
+  if (!meta || typeof meta !== 'object') return;
+  try {
+    localStorage.setItem(lsMetaKeyForUser(userKey), JSON.stringify(meta));
+  } catch (_) { /* quota / modo privado */ }
+}
+
 function saveState(userKey, s) {
   /* Retrocompatibilidade: se chamado como saveState(state) (uma única arg objeto), grava na chave legacy. */
   if (s === undefined && userKey && typeof userKey === 'object') {
@@ -1056,6 +1081,6 @@ function formatRelative(iso) {
 
 Object.assign(window, {
   LiveStairs, LEVEL_META, STEPS_PER_LEVEL, BASE_CATEGORIES, CATEGORIES,
-  loadState, saveState, defaultState, cryptoId, todayStr, calendarDateKey, dateKeyFromIso, addCalendarDays, formatRelative,
+  loadState, saveState, saveStateCache, loadStateMeta, defaultState, cryptoId, todayStr, calendarDateKey, dateKeyFromIso, addCalendarDays, formatRelative,
   mergeCategoryLists,
 });

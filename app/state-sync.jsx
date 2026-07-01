@@ -38,22 +38,29 @@ async function stepzSaveRemoteState(state) {
   if (!sb) return { ok: false, reason: 'no-supabase' };
   const userId = await stepzGetUserId();
   if (!userId) return { ok: false, reason: 'no-session' };
+  const updatedAt = new Date().toISOString();
   try {
     const { error } = await sb
       .from('user_state')
       .upsert(
-        { user_id: userId, state, updated_at: new Date().toISOString() },
+        { user_id: userId, state, updated_at: updatedAt },
         { onConflict: 'user_id' },
       );
     if (error) return { ok: false, reason: 'error', error };
-    return { ok: true };
+    return { ok: true, updatedAt };
   } catch (e) {
     return { ok: false, reason: 'exception', error: e };
   }
+}
+
+/** Grava imediatamente no remoto (sem debounce — usar a partir do App). */
+async function stepzFlushPendingSave(state) {
+  return stepzSaveRemoteState(state);
 }
 
 window.stepzRemoteState = {
   getUserId: stepzGetUserId,
   load: stepzLoadRemoteState,
   save: stepzSaveRemoteState,
+  flushPendingSave: stepzFlushPendingSave,
 };
