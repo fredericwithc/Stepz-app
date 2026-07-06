@@ -48,9 +48,15 @@ const INSPIRATION_QUOTES = [
   { q: "Always be a good person, even if nothing comes back in return.", a: '' },
   { q: "In a world obssessed with more, is easy to forget the beauty of less. A simple life doesn't mean settling. It means being free from endless chase.", a: '' },
   { q: "Growth isn't always loud or obvious. Sometimes it's simply choosing to keep going, even on the days that feel hard.", a: '' },
-  { q: "Reminder: It takes time..", a: '' },
+  { q: "Maybe real strenght is about being gentle when life gives you evey reason to be hard.", a: '' },
   { q: "Being kind is not a strategy, it's a decision. It's not about a reward. It's about who you choose to be, when no one else is watching.", a: '' },
   { q: "If you do not go after what you want, you'll never have it.", a: '' },
+  { q: "Appreciate everything. Appreciate when you walk outside and the sun warms you. Appreciate it when someone smiles at you. Appreciate who you are.", a: '' },
+  { q: "Sometimes you just need to watch the sunset. See the sky glow in all the shades of orange and red.", a: '' },
+  { q: "Be sure that everyday is a new chance. A new chance to be anything that you want and to do amazing things.", a: '' },
+  { q: "The bad news is everything is temporary. Which is also the good news. So if things are going good, enjoy it.", a: '' },
+  { q: "You will never be this age again. So please do what makes you happy. Stop waiting for permission. Stop waiting for the right time.", a: '' },
+  { q: "Take the trip. Start the thing. Tell the person. Wear the outfit. Try the new hobby. Life is happening right now.", a: '' },
 ];
 
 /** Dias de calendário entre duas datas ISO (YYYY-MM-DD), fim inclusivo em relação ao início. */
