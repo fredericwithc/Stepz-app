@@ -213,9 +213,76 @@ function cryptoId() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 }
 
+/** Soma de conteúdos principais — detecta apagão total, não queda gradual. */
+const STATE_RICHNESS_RICH_MIN = 3;
+
+function stateRichness(state) {
+  if (!state || typeof state !== 'object') return 0;
+  const tasks = Array.isArray(state.tasks) ? state.tasks.length : 0;
+  const habits = Array.isArray(state.habits) ? state.habits.length : 0;
+  const steps = Array.isArray(state.steps) ? state.steps.length : 0;
+  const goals = Array.isArray(state.goals) ? state.goals.length : 0;
+  const postits = Array.isArray(state.postits) ? state.postits.length : 0;
+  let postitItems = 0;
+  if (Array.isArray(state.postits)) {
+    for (const p of state.postits) {
+      if (p && Array.isArray(p.items)) postitItems += p.items.length;
+    }
+  }
+  return tasks + habits + steps + goals + postits + postitItems;
+}
+
+/** Bloqueia só wipe total: candidato ~vazio sobre referência claramente rica. */
+function isSuspiciousWipe(candidateState, referenceState) {
+  const cand = stateRichness(candidateState);
+  const ref = stateRichness(referenceState);
+  return cand === 0 && ref > STATE_RICHNESS_RICH_MIN;
+}
+
+function pickRicherState(a, b) {
+  const ra = stateRichness(a);
+  const rb = stateRichness(b);
+  if (ra >= rb) return a;
+  return b;
+}
+
 /** Chave de meta do cache local (espelho do remoto após sync OK). */
 function lsMetaKeyForUser(userKey) {
   return `${lsKeyForUser(userKey)}:meta`;
+}
+
+/** Último snapshot local considerado “bom” — nunca sobrescrito por bootstrap vazio. */
+function lsLastGoodKeyForUser(userKey) {
+  return `${lsKeyForUser(userKey)}:lastGood`;
+}
+
+function loadLastGoodState(userKey) {
+  try {
+    const raw = localStorage.getItem(lsLastGoodKeyForUser(userKey));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const merged = { ...defaultState(), ...parsed };
+    merged.categories = mergeCategoryLists(BASE_CATEGORIES, merged.categories);
+    if (!Array.isArray(merged.goals)) merged.goals = [];
+    if (!Array.isArray(merged.postits)) merged.postits = [];
+    return merged;
+  } catch (_) {
+    return null;
+  }
+}
+
+function saveLastGoodState(userKey, s) {
+  if (!userKey || !s || stateRichness(s) < STATE_RICHNESS_RICH_MIN) return;
+  try {
+    localStorage.setItem(lsLastGoodKeyForUser(userKey), JSON.stringify(s));
+  } catch (_) { /* quota */ }
+}
+
+function touchLastGoodIfRich(userKey, s) {
+  if (userKey && s && stateRichness(s) >= STATE_RICHNESS_RICH_MIN) {
+    saveLastGoodState(userKey, s);
+  }
 }
 
 function loadStateMeta(userKey) {

@@ -245,6 +245,46 @@ function buildCacheMeta(remoteUpdatedAt, stateJson) {
   };
 }
 
+/** Melhor candidato local (cache + lastGood) para comparar com remoto magro. */
+function bestLocalSnapshot(userKey, localState) {
+  const local = localState || loadState(userKey);
+  const lastGood = typeof loadLastGoodState === 'function' ? loadLastGoodState(userKey) : null;
+  if (lastGood) return pickRicherState(lastGood, local);
+  return local;
+}
+
+function parseSyncedStateJson(json) {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function exportStateBackupFile(state, userEmail) {
+  const day = typeof calendarDateKey === 'function' ? calendarDateKey(new Date()) : new Date().toISOString().slice(0, 10);
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const emailSlug = String(userEmail || 'local').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+  a.download = `stepz-backup-${day}${emailSlug ? `-${emailSlug}` : ''}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 500);
+}
+
+async function parseImportedStateFile(file) {
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('O ficheiro não contém um objeto JSON válido.');
+  }
+  return { ...defaultState(), ...parsed };
+}
+
 /** Cor do projeto: override em `projectColors` ou paleta determinística (definida em stairs.jsx). */
 function stepzResolveProjectColor(projectName, projectColors) {
   const map = projectColors && typeof projectColors === 'object' && !Array.isArray(projectColors) ? projectColors : {};
@@ -695,6 +735,9 @@ function App() {
   const [editingHabit, setEditingHabit] = useState(null);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [syncPhase, setSyncPhase] = useState('idle'); // idle | loading | ready | offline
+  const [syncNotice, setSyncNotice] = useState(null);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const importFileInputRef = useRef(null);
   const { isMobile } = useStepzViewport();
 
   const stateRef = useRef(state);
@@ -732,6 +775,7 @@ function App() {
   const remoteSaveInFlightRef = useRef(false);
   const lastHiddenAtRef = useRef(null);
   const performRemoteSaveRef = useRef(null);
+  const rehydrateFromRemoteRef = useRef(null);
 
   const clearRemoteSaveTimer = () => {
     if (remoteSaveTimerRef.current) {
@@ -774,10 +818,19 @@ function App() {
       pendingRemoteSnapshotRef.current = null;
       return true;
     }
+
+    const referenceState = parseSyncedStateJson(lastSyncedJsonRef.current)
+      || bestLocalSnapshot(userKey, stateRef.current);
+    if (typeof isSuspiciousWipe === 'function' && isSuspiciousWipe(snapshot, referenceState)) {
+      setSyncNotice('Gravação bloqueada: não é permitido substituir dados ricos por um estado vazio.');
+      pendingRemoteSnapshotRef.current = null;
+      return false;
+    }
+
     remoteSaveInFlightRef.current = true;
     let ok = false;
     try {
-      const res = await rs.save(snapshot);
+      const res = await rs.save(snapshot, { referenceState });
       if (res && res.ok) {
         lastSyncedJsonRef.current = json;
         pendingRemoteSnapshotRef.current = null;
@@ -786,8 +839,15 @@ function App() {
         if (typeof saveStateCache === 'function') {
           saveStateCache(userKey, snapshot, buildCacheMeta(res.updatedAt, json));
         }
+        if (typeof touchLastGoodIfRich === 'function') {
+          touchLastGoodIfRich(userKey, snapshot);
+        }
+        setSyncNotice(null);
         setSyncPhase((phase) => (phase === 'offline' ? 'ready' : phase));
         ok = true;
+      } else if (res && res.reason === 'wipe-blocked') {
+        setSyncNotice('Servidor recusou gravar: snapshot vazio sobre dados existentes.');
+        pendingRemoteSnapshotRef.current = null;
       } else {
         pendingRemoteSnapshotRef.current = snapshot;
         scheduleRemoteRetry(userKey);
@@ -870,33 +930,51 @@ function App() {
       if (bootstrapInFlightRef.current !== bootstrapTag) return;
       if (activeUserKeyRef.current !== userKey) return;
 
+      const bestLocal = bestLocalSnapshot(userKey, local);
+
       if (res && res.ok && res.found && res.state && typeof res.state === 'object') {
+        if (typeof isSuspiciousWipe === 'function' && isSuspiciousWipe(res.state, bestLocal)) {
+          const rescue = applyAutoReopenRecurringState(bestLocal);
+          lastSyncedJsonRef.current = JSON.stringify(res.state);
+          saveState(userKey, rescue);
+          if (typeof touchLastGoodIfRich === 'function') touchLastGoodIfRich(userKey, rescue);
+          setState(rescue);
+          setSyncNotice('Remoto vazio ou incompleto — os teus dados locais foram mantidos (não sobrescritos).');
+          setSyncPhase('ready');
+          return;
+        }
         const applied = applyAutoReopenRecurringState(res.state);
         const json = JSON.stringify(res.state);
         lastSyncedJsonRef.current = json;
         if (typeof saveStateCache === 'function') {
           saveStateCache(userKey, applied, buildCacheMeta(res.updatedAt, json));
         }
+        if (typeof touchLastGoodIfRich === 'function') touchLastGoodIfRich(userKey, applied);
+        setSyncNotice(null);
         setState(applied);
         setSyncPhase('ready');
         return;
       }
 
       if (res && res.ok && !res.found && typeof rs.save === 'function') {
-        const toUpload = local;
-        try {
-          const saveRes = await rs.save(toUpload);
-          if (saveRes && saveRes.ok) {
-            const json = JSON.stringify(toUpload);
-            lastSyncedJsonRef.current = json;
-            if (typeof saveStateCache === 'function') {
-              saveStateCache(userKey, toUpload, buildCacheMeta(saveRes.updatedAt, json));
+        const toUpload = applyAutoReopenRecurringState(bestLocal);
+        if (typeof stateRichness === 'function' && stateRichness(toUpload) > 0) {
+          try {
+            const saveRes = await rs.save(toUpload, { force: true, reason: 'save' });
+            if (saveRes && saveRes.ok) {
+              const json = JSON.stringify(toUpload);
+              lastSyncedJsonRef.current = json;
+              if (typeof saveStateCache === 'function') {
+                saveStateCache(userKey, toUpload, buildCacheMeta(saveRes.updatedAt, json));
+              }
+              if (typeof touchLastGoodIfRich === 'function') touchLastGoodIfRich(userKey, toUpload);
+              setSyncNotice(null);
+              setState(toUpload);
+              setSyncPhase('ready');
+              return;
             }
-            setState(toUpload);
-            setSyncPhase('ready');
-            return;
-          }
-        } catch (_) { /* upload inicial falhou */ }
+          } catch (_) { /* upload inicial falhou */ }
+        }
       }
 
       setState(local);
@@ -914,11 +992,13 @@ function App() {
     const supabaseOn = typeof isSupabaseConfigured === 'function' && isSupabaseConfigured();
     if (!supabaseOn) {
       saveState(userKey, state);
+      if (typeof touchLastGoodIfRich === 'function') touchLastGoodIfRich(userKey, state);
       return undefined;
     }
 
     if (syncPhase === 'offline') {
       saveState(userKey, state);
+      if (typeof touchLastGoodIfRich === 'function') touchLastGoodIfRich(userKey, state);
     }
 
     if (syncPhase !== 'ready' && syncPhase !== 'offline') return undefined;
@@ -939,7 +1019,45 @@ function App() {
     return () => clearRemoteSaveTimer();
   }, [state, syncPhase]);
 
-  /* Wake / fechar: flush ao esconder; reload após ausência longa; bfcache. */
+  rehydrateFromRemoteRef.current = async (userKey) => {
+    if (!userKey) return;
+    const supabaseOn = typeof isSupabaseConfigured === 'function' && isSupabaseConfigured();
+    if (!supabaseOn) return;
+    const rs = typeof window !== 'undefined' ? window.stepzRemoteState : null;
+    if (!rs || typeof rs.load !== 'function') return;
+    const bestLocal = bestLocalSnapshot(userKey, stateRef.current);
+    let res;
+    try {
+      res = await rs.load();
+    } catch (_) {
+      setSyncPhase('offline');
+      return;
+    }
+    if (!res || !res.ok) {
+      setSyncPhase('offline');
+      return;
+    }
+    if (activeUserKeyRef.current !== userKey) return;
+    if (res.found && res.state && typeof res.state === 'object') {
+      if (typeof isSuspiciousWipe === 'function' && isSuspiciousWipe(res.state, bestLocal)) {
+        setSyncNotice('Remoto vazio ou incompleto — os teus dados locais foram mantidos.');
+        setSyncPhase('ready');
+        return;
+      }
+      const applied = applyAutoReopenRecurringState(res.state);
+      const json = JSON.stringify(res.state);
+      lastSyncedJsonRef.current = json;
+      if (typeof saveStateCache === 'function') {
+        saveStateCache(userKey, applied, buildCacheMeta(res.updatedAt, json));
+      }
+      if (typeof touchLastGoodIfRich === 'function') touchLastGoodIfRich(userKey, applied);
+      setSyncNotice(null);
+      setState(applied);
+      setSyncPhase('ready');
+    }
+  };
+
+  /* Wake / fechar: flush ao esconder; re-hidratação após ausência longa (sem reload cego). */
   useEffect(() => {
     if (!session) return undefined;
     if (!activeUserKeyRef.current) return undefined;
@@ -957,7 +1075,11 @@ function App() {
       if (hiddenMs >= WAKE_RELOAD_HIDDEN_MS) {
         void (async () => {
           await flushRemoteSave();
-          window.location.reload();
+          const userKey = activeUserKeyRef.current;
+          if (rehydrateFromRemoteRef.current && userKey) {
+            await rehydrateFromRemoteRef.current(userKey);
+          }
+          setState((s) => applyAutoReopenRecurringState(s));
         })();
         return;
       }
@@ -965,7 +1087,13 @@ function App() {
     };
 
     const onPageShow = (e) => {
-      if (e.persisted) window.location.reload();
+      if (e.persisted) {
+        const userKey = activeUserKeyRef.current;
+        if (rehydrateFromRemoteRef.current && userKey) {
+          void rehydrateFromRemoteRef.current(userKey);
+        }
+        setState((s) => applyAutoReopenRecurringState(s));
+      }
     };
 
     const onPageHide = () => { void flushRemoteSave(); };
@@ -1687,6 +1815,78 @@ function App() {
     );
   }
 
+  const handleExportBackup = () => {
+    exportStateBackupFile(state, session.email);
+  };
+
+  const handleImportBackupClick = () => {
+    if (importFileInputRef.current) importFileInputRef.current.click();
+  };
+
+  const handleImportFileChange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const userKey = activeUserKeyRef.current;
+    try {
+      const parsed = await parseImportedStateFile(file);
+      const merged = applyAutoReopenRecurringState(parsed);
+      if (typeof isSuspiciousWipe === 'function' && isSuspiciousWipe(merged, state)) {
+        if (!window.confirm('Este backup parece vazio em relação aos dados actuais. Importar mesmo assim?')) return;
+      } else if (!window.confirm('Substituir os dados actuais por este backup?')) {
+        return;
+      }
+      setState(merged);
+      lastSyncedJsonRef.current = '';
+      if (userKey && typeof touchLastGoodIfRich === 'function') touchLastGoodIfRich(userKey, merged);
+      if (userKey && supabaseOn) {
+        const rs = typeof window !== 'undefined' ? window.stepzRemoteState : null;
+        if (rs && typeof rs.save === 'function') {
+          const saveRes = await rs.save(merged, { force: true, reason: 'manual' });
+          if (saveRes && saveRes.ok) {
+            const json = JSON.stringify(merged);
+            lastSyncedJsonRef.current = json;
+            if (typeof saveStateCache === 'function') {
+              saveStateCache(userKey, merged, buildCacheMeta(saveRes.updatedAt, json));
+            }
+          }
+        }
+      } else if (userKey) {
+        saveState(userKey, merged);
+      }
+      setSyncNotice(null);
+    } catch (err) {
+      window.alert(err && err.message ? err.message : 'Não foi possível importar o ficheiro.');
+    }
+  };
+
+  const handleRestoreFromHistory = async (historyId) => {
+    const userKey = activeUserKeyRef.current;
+    const rs = typeof window !== 'undefined' ? window.stepzRemoteState : null;
+    if (!rs || typeof rs.restoreFromHistory !== 'function') {
+      window.alert('Restauro indisponível.');
+      return;
+    }
+    if (!window.confirm('Restaurar este snapshot? Os dados actuais serão substituídos.')) return;
+    const res = await rs.restoreFromHistory(historyId);
+    if (!res || !res.ok || !res.state) {
+      window.alert('Não foi possível restaurar este snapshot.');
+      return;
+    }
+    const applied = applyAutoReopenRecurringState(res.state);
+    const json = JSON.stringify(res.state);
+    lastSyncedJsonRef.current = json;
+    if (userKey && typeof saveStateCache === 'function') {
+      saveStateCache(userKey, applied, buildCacheMeta(res.updatedAt, json));
+    } else if (userKey) {
+      saveState(userKey, applied);
+    }
+    if (userKey && typeof touchLastGoodIfRich === 'function') touchLastGoodIfRich(userKey, applied);
+    setState(applied);
+    setSyncNotice(null);
+    setHistoryModalOpen(false);
+  };
+
   return (
     <div style={{
       fontFamily: stepzTokens.font,
@@ -1711,7 +1911,36 @@ function App() {
           clearAuthSession();
           setSession(null);
         }}
+        onExportBackup={handleExportBackup}
+        onImportBackup={handleImportBackupClick}
+        onOpenHistory={supabaseOn ? () => setHistoryModalOpen(true) : undefined}
       />
+      <input
+        ref={importFileInputRef}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: 'none' }}
+        onChange={handleImportFileChange}
+      />
+      <StateHistoryModal
+        open={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+        onRestore={handleRestoreFromHistory}
+      />
+      {syncNotice ? (
+        <div style={{
+          margin: '0 auto',
+          maxWidth: 1200,
+          padding: '8px 16px',
+          fontSize: 12,
+          color: stepzTokens.warn,
+          background: 'rgba(255,120,80,0.1)',
+          borderBottom: `1px solid ${stepzTokens.border}`,
+          textAlign: 'center',
+        }}>
+          {syncNotice}
+        </div>
+      ) : null}
       {syncPhase === 'offline' && supabaseOn ? (
         <div style={{
           margin: '0 auto',
@@ -1891,7 +2120,166 @@ function App() {
   );
 }
 
-function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubtitle }) {
+function StateHistoryModal({ open, onClose, onRestore }) {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [restoringId, setRestoringId] = useState(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const rs = typeof window !== 'undefined' ? window.stepzRemoteState : null;
+    if (!rs || typeof rs.loadHistory !== 'function') {
+      setError('Histórico indisponível (Supabase não configurado).');
+      setLoading(false);
+      return undefined;
+    }
+    rs.loadHistory().then((res) => {
+      if (cancelled) return;
+      if (res && res.ok) {
+        setEntries(Array.isArray(res.entries) ? res.entries : []);
+      } else {
+        setError('Não foi possível carregar o histórico. A tabela user_state_history existe no Supabase?');
+      }
+      setLoading(false);
+    }).catch(() => {
+      if (!cancelled) {
+        setError('Erro ao carregar histórico.');
+        setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  if (!open) return null;
+
+  const formatWhen = (iso) => {
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return String(iso || '');
+      return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    } catch (_) {
+      return String(iso || '');
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="stepz-history-title"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 100,
+        background: 'rgba(0,0,0,0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div style={{
+        width: '100%',
+        maxWidth: 420,
+        maxHeight: 'min(80vh, 520px)',
+        background: stepzTokens.panel,
+        border: `1px solid ${stepzTokens.borderStrong}`,
+        borderRadius: 14,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        boxShadow: '0 24px 48px rgba(0,0,0,0.5)',
+      }}>
+        <div style={{ padding: '16px 18px', borderBottom: `1px solid ${stepzTokens.border}` }}>
+          <div id="stepz-history-title" style={{ fontSize: 15, fontWeight: 600 }}>Histórico na nuvem</div>
+          <div style={{ fontSize: 12, color: stepzTokens.textDim, marginTop: 4 }}>
+            Últimas {40} gravações automáticas no servidor.
+          </div>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px' }}>
+          {loading ? (
+            <div style={{ padding: 20, textAlign: 'center', color: stepzTokens.textDim, fontSize: 13 }}>A carregar…</div>
+          ) : null}
+          {error ? (
+            <div style={{ padding: 16, fontSize: 12, color: stepzTokens.warn, lineHeight: 1.45 }}>{error}</div>
+          ) : null}
+          {!loading && !error && entries.length === 0 ? (
+            <div style={{ padding: 20, textAlign: 'center', color: stepzTokens.textDim, fontSize: 13 }}>
+              Ainda não há entradas. Gravações futuras aparecem aqui.
+            </div>
+          ) : null}
+          {!loading && !error && entries.map((entry) => (
+            <div
+              key={entry.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10,
+                padding: '10px 8px',
+                borderBottom: `1px solid ${stepzTokens.border}`,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: stepzTokens.text }}>{formatWhen(entry.created_at)}</div>
+                <div style={{ fontSize: 11, color: stepzTokens.textFaint, marginTop: 2 }}>
+                  {entry.reason === 'manual' ? 'restauro manual' : 'gravação automática'}
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={restoringId === entry.id}
+                onClick={() => {
+                  if (typeof onRestore !== 'function') return;
+                  setRestoringId(entry.id);
+                  Promise.resolve(onRestore(entry.id)).finally(() => setRestoringId(null));
+                }}
+                style={{
+                  flexShrink: 0,
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  borderRadius: 8,
+                  border: `1px solid ${stepzTokens.borderStrong}`,
+                  background: stepzTokens.panel2,
+                  color: stepzTokens.text,
+                  cursor: restoringId === entry.id ? 'wait' : 'pointer',
+                  fontFamily: stepzTokens.font,
+                }}
+              >
+                {restoringId === entry.id ? '…' : 'Restaurar'}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: '12px 14px', borderTop: `1px solid ${stepzTokens.border}`, textAlign: 'right' }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: '8px 14px',
+              fontSize: 13,
+              borderRadius: 8,
+              border: `1px solid ${stepzTokens.border}`,
+              background: 'transparent',
+              color: stepzTokens.textDim,
+              cursor: 'pointer',
+              fontFamily: stepzTokens.font,
+            }}
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubtitle, onExportBackup, onImportBackup, onOpenHistory }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
@@ -2010,6 +2398,45 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubt
               <span>Editar senha</span>
             </button>
           ) : null}
+          {typeof onExportBackup === 'function' ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onExportBackup(); }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              style={itemBtn}
+            >
+              <span aria-hidden style={{ fontSize: 14 }}>⬇</span>
+              <span>Exportar backup (JSON)</span>
+            </button>
+          ) : null}
+          {typeof onImportBackup === 'function' ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onImportBackup(); }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              style={itemBtn}
+            >
+              <span aria-hidden style={{ fontSize: 14 }}>⬆</span>
+              <span>Restaurar de ficheiro</span>
+            </button>
+          ) : null}
+          {typeof onOpenHistory === 'function' ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onOpenHistory(); }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              style={itemBtn}
+            >
+              <span aria-hidden style={{ fontSize: 14 }}>🕐</span>
+              <span>Histórico na nuvem</span>
+            </button>
+          ) : null}
           {typeof onLogout === 'function' ? (
             <button
               type="button"
@@ -2029,7 +2456,7 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubt
   );
 }
 
-function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassword }) {
+function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassword, onExportBackup, onImportBackup, onOpenHistory }) {
   const { isMobile } = useStepzViewport();
   const tabs = [
     { id: 'home', label: 'Início' },
@@ -2120,6 +2547,9 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
               onLogout={onLogout}
               isMobile={isMobile}
               dateSubtitle={isMobile ? todayFull : undefined}
+              onExportBackup={onExportBackup}
+              onImportBackup={onImportBackup}
+              onOpenHistory={onOpenHistory}
             />
           </div>
         </div>

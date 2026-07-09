@@ -1,6 +1,8 @@
 // Sync de estado por utilizador no Supabase.
 // Modelo "blob único": uma linha em public.user_state com { user_id, state jsonb, updated_at }.
-// A tabela tem RLS — cada utilizador só lê/escreve a sua linha (auth.uid() = user_id).
+// Histórico em public.user_state_history (últimas 40 entradas por utilizador).
+
+const HISTORY_MAX_ENTRIES = 40;
 
 async function stepzGetUserId() {
   const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
@@ -14,32 +16,93 @@ async function stepzGetUserId() {
   }
 }
 
+function stepzWipeGuardBlocked(candidateState, referenceState) {
+  if (typeof isSuspiciousWipe !== 'function') return false;
+  if (!referenceState) return false;
+  return isSuspiciousWipe(candidateState, referenceState);
+}
+
+async function stepzLoadCurrentRemoteStateRow(sb, userId) {
+  const { data, error } = await sb
+    .from('user_state')
+    .select('state, updated_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) return { ok: false, error };
+  if (!data) return { ok: true, found: false };
+  return { ok: true, found: true, state: data.state, updatedAt: data.updated_at };
+}
+
+async function stepzPruneStateHistory(sb, userId) {
+  const { data: rows, error } = await sb
+    .from('user_state_history')
+    .select('id')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (error || !Array.isArray(rows) || rows.length <= HISTORY_MAX_ENTRIES) return;
+  const toDelete = rows.slice(HISTORY_MAX_ENTRIES).map((r) => r.id);
+  if (!toDelete.length) return;
+  await sb.from('user_state_history').delete().in('id', toDelete);
+}
+
+async function stepzInsertStateHistory(sb, userId, state, reason) {
+  const { error } = await sb.from('user_state_history').insert({
+    user_id: userId,
+    state,
+    reason: reason || 'save',
+  });
+  if (error) return { ok: false, error };
+  await stepzPruneStateHistory(sb, userId);
+  return { ok: true };
+}
+
 async function stepzLoadRemoteState() {
   const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
   if (!sb) return { ok: false, reason: 'no-supabase' };
   const userId = await stepzGetUserId();
   if (!userId) return { ok: false, reason: 'no-session' };
   try {
-    const { data, error } = await sb
-      .from('user_state')
-      .select('state, updated_at')
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (error) return { ok: false, reason: 'error', error };
-    if (!data) return { ok: true, found: false };
-    return { ok: true, found: true, state: data.state, updatedAt: data.updated_at };
+    const row = await stepzLoadCurrentRemoteStateRow(sb, userId);
+    if (!row.ok) return { ok: false, reason: 'error', error: row.error };
+    if (!row.found) return { ok: true, found: false };
+    return { ok: true, found: true, state: row.state, updatedAt: row.updatedAt };
   } catch (e) {
     return { ok: false, reason: 'exception', error: e };
   }
 }
 
-async function stepzSaveRemoteState(state) {
+/**
+ * @param {object} state
+ * @param {{ force?: boolean, reason?: string, referenceState?: object }} [opts]
+ */
+async function stepzSaveRemoteState(state, opts) {
+  const options = opts && typeof opts === 'object' ? opts : {};
   const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
   if (!sb) return { ok: false, reason: 'no-supabase' };
   const userId = await stepzGetUserId();
   if (!userId) return { ok: false, reason: 'no-session' };
   const updatedAt = new Date().toISOString();
   try {
+    if (!options.force) {
+      let reference = options.referenceState || null;
+      if (!reference) {
+        const current = await stepzLoadCurrentRemoteStateRow(sb, userId);
+        if (current.ok && current.found && current.state) reference = current.state;
+      }
+      if (stepzWipeGuardBlocked(state, reference)) {
+        return { ok: false, reason: 'wipe-blocked' };
+      }
+    }
+
+    const hist = await stepzInsertStateHistory(sb, userId, state, options.reason || 'save');
+    if (!hist.ok) {
+      /* Histórico opcional se a tabela ainda não existir — continua o upsert. */
+      const msg = hist.error && (hist.error.message || String(hist.error));
+      if (msg && !/does not exist|relation.*user_state_history/i.test(msg)) {
+        return { ok: false, reason: 'history-error', error: hist.error };
+      }
+    }
+
     const { error } = await sb
       .from('user_state')
       .upsert(
@@ -54,8 +117,51 @@ async function stepzSaveRemoteState(state) {
 }
 
 /** Grava imediatamente no remoto (sem debounce — usar a partir do App). */
-async function stepzFlushPendingSave(state) {
-  return stepzSaveRemoteState(state);
+async function stepzFlushPendingSave(state, opts) {
+  return stepzSaveRemoteState(state, opts);
+}
+
+async function stepzLoadStateHistory() {
+  const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
+  if (!sb) return { ok: false, reason: 'no-supabase' };
+  const userId = await stepzGetUserId();
+  if (!userId) return { ok: false, reason: 'no-session' };
+  try {
+    const { data, error } = await sb
+      .from('user_state_history')
+      .select('id, created_at, reason')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(HISTORY_MAX_ENTRIES);
+    if (error) return { ok: false, reason: 'error', error };
+    return { ok: true, entries: Array.isArray(data) ? data : [] };
+  } catch (e) {
+    return { ok: false, reason: 'exception', error: e };
+  }
+}
+
+async function stepzRestoreFromHistory(historyId) {
+  const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
+  if (!sb) return { ok: false, reason: 'no-supabase' };
+  const userId = await stepzGetUserId();
+  if (!userId) return { ok: false, reason: 'no-session' };
+  const id = String(historyId || '').trim();
+  if (!id) return { ok: false, reason: 'no-id' };
+  try {
+    const { data, error } = await sb
+      .from('user_state_history')
+      .select('id, state, created_at')
+      .eq('user_id', userId)
+      .eq('id', id)
+      .maybeSingle();
+    if (error) return { ok: false, reason: 'error', error };
+    if (!data || !data.state) return { ok: false, reason: 'not-found' };
+    const saveRes = await stepzSaveRemoteState(data.state, { force: true, reason: 'manual' });
+    if (!saveRes.ok) return saveRes;
+    return { ok: true, state: data.state, updatedAt: saveRes.updatedAt, createdAt: data.created_at };
+  } catch (e) {
+    return { ok: false, reason: 'exception', error: e };
+  }
 }
 
 window.stepzRemoteState = {
@@ -63,4 +169,6 @@ window.stepzRemoteState = {
   load: stepzLoadRemoteState,
   save: stepzSaveRemoteState,
   flushPendingSave: stepzFlushPendingSave,
+  loadHistory: stepzLoadStateHistory,
+  restoreFromHistory: stepzRestoreFromHistory,
 };
