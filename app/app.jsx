@@ -2322,7 +2322,7 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubt
   };
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0 }}>
+    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0, zIndex: open ? 50 : 'auto' }}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -2357,12 +2357,16 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubt
             right: 0,
             minWidth: isMobile ? 240 : 260,
             maxWidth: 320,
+            maxHeight: 'min(70vh, 420px)',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
             background: stepzTokens.panel,
             border: `1px solid ${stepzTokens.borderStrong}`,
             borderRadius: 12,
             padding: 6,
             boxShadow: '0 18px 36px rgba(0,0,0,0.45)',
-            zIndex: 30,
+            zIndex: 1000,
           }}
         >
           <div style={{ padding: '8px 12px 10px', borderBottom: `1px solid ${stepzTokens.border}`, marginBottom: 4 }}>
@@ -2475,12 +2479,12 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
       background: stepzTokens.bg,
       position: 'sticky',
       top: 0,
-      zIndex: 10,
+      zIndex: 40,
       paddingTop: 'env(safe-area-inset-top, 0px)',
       width: '100%',
       maxWidth: '100%',
       minWidth: 0,
-      overflowX: 'hidden',
+      overflow: 'visible',
       boxSizing: 'border-box',
     }}>
       <div style={{
@@ -2490,6 +2494,7 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
         width: '100%',
         boxSizing: 'border-box',
         minWidth: 0,
+        overflow: 'visible',
       }}>
         <div style={{
           display: 'flex',
@@ -2497,6 +2502,9 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
           justifyContent: 'space-between',
           gap: isMobile ? 8 : 14,
           flexWrap: 'nowrap',
+          overflow: 'visible',
+          position: 'relative',
+          zIndex: 2,
           minWidth: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, minWidth: 0, flex: '1 1 auto' }}>
