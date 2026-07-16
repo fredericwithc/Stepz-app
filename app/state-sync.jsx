@@ -1,8 +1,10 @@
 // Sync de estado por utilizador no Supabase.
 // Modelo "blob único": uma linha em public.user_state com { user_id, state jsonb, updated_at }.
 // Histórico em public.user_state_history (últimas 40 entradas por utilizador).
+// Histórico é selectivo: dedupe de estado idêntico + throttle 10min em saves automáticos.
 
 const HISTORY_MAX_ENTRIES = 40;
+const HISTORY_MIN_INTERVAL_MS = 10 * 60 * 1000;
 
 async function stepzGetUserId() {
   const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
@@ -22,6 +24,14 @@ function stepzWipeGuardBlocked(candidateState, referenceState) {
   return isSuspiciousWipe(candidateState, referenceState);
 }
 
+function stepzStableStateJson(state) {
+  try {
+    return JSON.stringify(state);
+  } catch (_) {
+    return '';
+  }
+}
+
 async function stepzLoadCurrentRemoteStateRow(sb, userId) {
   const { data, error } = await sb
     .from('user_state')
@@ -31,6 +41,19 @@ async function stepzLoadCurrentRemoteStateRow(sb, userId) {
   if (error) return { ok: false, error };
   if (!data) return { ok: true, found: false };
   return { ok: true, found: true, state: data.state, updatedAt: data.updated_at };
+}
+
+async function stepzLoadLatestHistoryRow(sb, userId) {
+  const { data, error } = await sb
+    .from('user_state_history')
+    .select('id, state, created_at, reason')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return { ok: false, error };
+  if (!data) return { ok: true, found: false };
+  return { ok: true, found: true, row: data };
 }
 
 async function stepzPruneStateHistory(sb, userId) {
@@ -45,15 +68,44 @@ async function stepzPruneStateHistory(sb, userId) {
   await sb.from('user_state_history').delete().in('id', toDelete);
 }
 
+/**
+ * Insere no histórico só quando útil:
+ * - salta se o estado for idêntico ao último snapshot
+ * - em reason "save", salta se a última entrada for de há menos de 10 min
+ * - reason "manual" ignora o throttle (ainda deduplica estado idêntico)
+ */
 async function stepzInsertStateHistory(sb, userId, state, reason) {
+  const reasonKey = reason || 'save';
+  const nextJson = stepzStableStateJson(state);
+
+  const latest = await stepzLoadLatestHistoryRow(sb, userId);
+  if (!latest.ok) {
+    const msg = latest.error && (latest.error.message || String(latest.error));
+    if (msg && /does not exist|relation.*user_state_history/i.test(msg)) {
+      return { ok: false, error: latest.error, skipped: false };
+    }
+    /* Sem leitura da última linha: tenta inserir na mesma (melhor ter histórico). */
+  } else if (latest.found && latest.row) {
+    const prevJson = stepzStableStateJson(latest.row.state);
+    if (prevJson && nextJson && prevJson === nextJson) {
+      return { ok: true, skipped: true, reason: 'duplicate' };
+    }
+    if (reasonKey !== 'manual' && latest.row.created_at) {
+      const lastMs = new Date(latest.row.created_at).getTime();
+      if (!Number.isNaN(lastMs) && Date.now() - lastMs < HISTORY_MIN_INTERVAL_MS) {
+        return { ok: true, skipped: true, reason: 'throttled' };
+      }
+    }
+  }
+
   const { error } = await sb.from('user_state_history').insert({
     user_id: userId,
     state,
-    reason: reason || 'save',
+    reason: reasonKey,
   });
-  if (error) return { ok: false, error };
+  if (error) return { ok: false, error, skipped: false };
   await stepzPruneStateHistory(sb, userId);
-  return { ok: true };
+  return { ok: true, skipped: false };
 }
 
 async function stepzLoadRemoteState() {
@@ -110,7 +162,7 @@ async function stepzSaveRemoteState(state, opts) {
         { onConflict: 'user_id' },
       );
     if (error) return { ok: false, reason: 'error', error };
-    return { ok: true, updatedAt };
+    return { ok: true, updatedAt, historySkipped: !!(hist && hist.skipped) };
   } catch (e) {
     return { ok: false, reason: 'exception', error: e };
   }
@@ -129,7 +181,7 @@ async function stepzLoadStateHistory() {
   try {
     const { data, error } = await sb
       .from('user_state_history')
-      .select('id, created_at, reason')
+      .select('id, created_at, reason, state')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(HISTORY_MAX_ENTRIES);

@@ -2120,6 +2120,22 @@ function App() {
   );
 }
 
+function formatHistoryStateSummary(state) {
+  if (!state || typeof state !== 'object') return 'sem dados';
+  const tasks = Array.isArray(state.tasks) ? state.tasks.length : 0;
+  const steps = Array.isArray(state.steps) ? state.steps.length : 0;
+  const habits = Array.isArray(state.habits) ? state.habits.length : 0;
+  const goals = Array.isArray(state.goals) ? state.goals.length : 0;
+  const postits = Array.isArray(state.postits) ? state.postits.length : 0;
+  const parts = [];
+  if (tasks) parts.push(`${tasks} task${tasks === 1 ? '' : 's'}`);
+  if (steps) parts.push(`${steps} degrau${steps === 1 ? '' : 's'}`);
+  if (habits) parts.push(`${habits} hábito${habits === 1 ? '' : 's'}`);
+  if (goals) parts.push(`${goals} meta${goals === 1 ? '' : 's'}`);
+  if (postits) parts.push(`${postits} post-it${postits === 1 ? '' : 's'}`);
+  return parts.length ? parts.join(' · ') : 'vazio';
+}
+
 function StateHistoryModal({ open, onClose, onRestore }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -2198,7 +2214,7 @@ function StateHistoryModal({ open, onClose, onRestore }) {
         <div style={{ padding: '16px 18px', borderBottom: `1px solid ${stepzTokens.border}` }}>
           <div id="stepz-history-title" style={{ fontSize: 15, fontWeight: 600 }}>Histórico na nuvem</div>
           <div style={{ fontSize: 12, color: stepzTokens.textDim, marginTop: 4 }}>
-            Últimas {40} gravações automáticas no servidor.
+            Até {40} snapshots (só quando o estado muda; automáticos no máx. 1 / 10 min).
           </div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px' }}>
@@ -2227,6 +2243,9 @@ function StateHistoryModal({ open, onClose, onRestore }) {
             >
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13, color: stepzTokens.text }}>{formatWhen(entry.created_at)}</div>
+                <div style={{ fontSize: 11, color: stepzTokens.textDim, marginTop: 2 }}>
+                  {formatHistoryStateSummary(entry.state)}
+                </div>
                 <div style={{ fontSize: 11, color: stepzTokens.textFaint, marginTop: 2 }}>
                   {entry.reason === 'manual' ? 'restauro manual' : 'gravação automática'}
                 </div>
