@@ -2281,22 +2281,46 @@ function StateHistoryModal({ open, onClose, onRestore }) {
 
 function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubtitle, onExportBackup, onImportBackup, onOpenHistory }) {
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef(null);
+  const [menuPos, setMenuPos] = useState(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const updateMenuPos = () => {
+    const btn = buttonRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const width = isMobile ? 240 : 260;
+    const gap = 8;
+    const right = Math.max(8, window.innerWidth - rect.right);
+    let top = rect.bottom + gap;
+    const maxH = Math.min(window.innerHeight * 0.7, 420);
+    if (top + Math.min(maxH, 280) > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - gap - Math.min(maxH, 280));
+    }
+    setMenuPos({ top, right, width, maxHeight: maxH });
+  };
 
   useEffect(() => {
     if (!open) return undefined;
+    updateMenuPos();
     const onDocMouseDown = (e) => {
-      if (!wrapRef.current) return;
-      if (!wrapRef.current.contains(e.target)) setOpen(false);
+      if (buttonRef.current && buttonRef.current.contains(e.target)) return;
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      setOpen(false);
     };
     const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const onReposition = () => updateMenuPos();
     document.addEventListener('mousedown', onDocMouseDown);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
     return () => {
       document.removeEventListener('mousedown', onDocMouseDown);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onReposition);
+      window.removeEventListener('scroll', onReposition, true);
     };
-  }, [open]);
+  }, [open, isMobile]);
 
   /** Inicial do email para o avatar (Foi pensada de ser estável: sempre o primeiro char a-z, ou "?" se vazio). */
   const initial = (() => {
@@ -2321,11 +2345,135 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubt
     borderRadius: 6,
   };
 
+  const menuPanel = open && menuPos ? (
+    <div
+      ref={menuRef}
+      role="menu"
+      style={{
+        position: 'fixed',
+        top: menuPos.top,
+        right: menuPos.right,
+        width: menuPos.width,
+        maxWidth: 'calc(100vw - 16px)',
+        maxHeight: menuPos.maxHeight,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        WebkitOverflowScrolling: 'touch',
+        background: stepzTokens.panel,
+        border: `1px solid ${stepzTokens.borderStrong}`,
+        borderRadius: 12,
+        padding: 6,
+        boxShadow: '0 18px 36px rgba(0,0,0,0.55)',
+        zIndex: 10050,
+      }}
+    >
+      <div style={{ padding: '8px 12px 10px', borderBottom: `1px solid ${stepzTokens.border}`, marginBottom: 4 }}>
+        <div style={{ fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase', color: stepzTokens.textFaint, marginBottom: 4 }}>conta</div>
+        {dateSubtitle ? (
+          <div style={{ fontSize: 12, color: stepzTokens.text, marginBottom: 6, lineHeight: 1.3 }}>
+            {dateSubtitle}
+          </div>
+        ) : null}
+        <div
+          title={userEmail}
+          style={{
+            fontSize: 12,
+            color: stepzTokens.textDim,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {userEmail || 'Sem e-mail'}
+        </div>
+      </div>
+      {typeof onChangePassword === 'function' ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => { setOpen(false); onChangePassword(); }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          style={itemBtn}
+        >
+          <span aria-hidden style={{ fontSize: 14 }}>🔒</span>
+          <span>Editar senha</span>
+        </button>
+      ) : null}
+      {typeof onExportBackup === 'function' ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => { setOpen(false); onExportBackup(); }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          style={itemBtn}
+        >
+          <span aria-hidden style={{ fontSize: 14 }}>⬇</span>
+          <span>Exportar backup (JSON)</span>
+        </button>
+      ) : null}
+      {typeof onImportBackup === 'function' ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => { setOpen(false); onImportBackup(); }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          style={itemBtn}
+        >
+          <span aria-hidden style={{ fontSize: 14 }}>⬆</span>
+          <span>Restaurar de ficheiro</span>
+        </button>
+      ) : null}
+      {typeof onOpenHistory === 'function' ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => { setOpen(false); onOpenHistory(); }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          style={itemBtn}
+        >
+          <span aria-hidden style={{ fontSize: 14 }}>🕐</span>
+          <span>Histórico na nuvem</span>
+        </button>
+      ) : null}
+      {typeof onLogout === 'function' ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => { setOpen(false); onLogout(); }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          style={{ ...itemBtn, color: 'oklch(0.78 0.14 25)' }}
+        >
+          <span aria-hidden style={{ fontSize: 14 }}>↩</span>
+          <span>Sair</span>
+        </button>
+      ) : null}
+    </div>
+  ) : null;
+
+  const RD = typeof ReactDOM !== 'undefined' ? ReactDOM : (typeof window !== 'undefined' ? window.ReactDOM : null);
+  const portal = menuPanel && RD && typeof RD.createPortal === 'function'
+    ? RD.createPortal(menuPanel, document.body)
+    : menuPanel;
+
   return (
-    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0, zIndex: open ? 50 : 'auto' }}>
+    <div style={{ position: 'relative', flexShrink: 0 }}>
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            setMenuPos(null);
+            return;
+          }
+          updateMenuPos();
+          setOpen(true);
+        }}
         title={userEmail ? `Perfil · ${userEmail}` : 'Perfil'}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -2348,114 +2496,7 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubt
       >
         {initial}
       </button>
-      {open ? (
-        <div
-          role="menu"
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 8px)',
-            right: 0,
-            minWidth: isMobile ? 240 : 260,
-            maxWidth: 320,
-            maxHeight: 'min(70vh, 420px)',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            WebkitOverflowScrolling: 'touch',
-            background: stepzTokens.panel,
-            border: `1px solid ${stepzTokens.borderStrong}`,
-            borderRadius: 12,
-            padding: 6,
-            boxShadow: '0 18px 36px rgba(0,0,0,0.45)',
-            zIndex: 1000,
-          }}
-        >
-          <div style={{ padding: '8px 12px 10px', borderBottom: `1px solid ${stepzTokens.border}`, marginBottom: 4 }}>
-            <div style={{ fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase', color: stepzTokens.textFaint, marginBottom: 4 }}>conta</div>
-            {dateSubtitle ? (
-              <div style={{ fontSize: 12, color: stepzTokens.text, marginBottom: 6, lineHeight: 1.3 }}>
-                {dateSubtitle}
-              </div>
-            ) : null}
-            <div
-              title={userEmail}
-              style={{
-                fontSize: 12,
-                color: stepzTokens.textDim,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {userEmail || 'Sem e-mail'}
-            </div>
-          </div>
-          {typeof onChangePassword === 'function' ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => { setOpen(false); onChangePassword(); }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-              style={itemBtn}
-            >
-              <span aria-hidden style={{ fontSize: 14 }}>🔒</span>
-              <span>Editar senha</span>
-            </button>
-          ) : null}
-          {typeof onExportBackup === 'function' ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => { setOpen(false); onExportBackup(); }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-              style={itemBtn}
-            >
-              <span aria-hidden style={{ fontSize: 14 }}>⬇</span>
-              <span>Exportar backup (JSON)</span>
-            </button>
-          ) : null}
-          {typeof onImportBackup === 'function' ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => { setOpen(false); onImportBackup(); }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-              style={itemBtn}
-            >
-              <span aria-hidden style={{ fontSize: 14 }}>⬆</span>
-              <span>Restaurar de ficheiro</span>
-            </button>
-          ) : null}
-          {typeof onOpenHistory === 'function' ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => { setOpen(false); onOpenHistory(); }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-              style={itemBtn}
-            >
-              <span aria-hidden style={{ fontSize: 14 }}>🕐</span>
-              <span>Histórico na nuvem</span>
-            </button>
-          ) : null}
-          {typeof onLogout === 'function' ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => { setOpen(false); onLogout(); }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-              style={{ ...itemBtn, color: 'oklch(0.78 0.14 25)' }}
-            >
-              <span aria-hidden style={{ fontSize: 14 }}>↩</span>
-              <span>Sair</span>
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+      {portal}
     </div>
   );
 }
