@@ -1,10 +1,9 @@
 // Sync de estado por utilizador no Supabase.
 // Modelo "blob único": uma linha em public.user_state com { user_id, state jsonb, updated_at }.
 // Histórico em public.user_state_history (últimas 40 entradas por utilizador).
-// Histórico é selectivo: dedupe de estado idêntico + throttle 10min em saves automáticos.
+// Histórico selectivo: só dedupe de estado idêntico (sem throttle por tempo).
 
 const HISTORY_MAX_ENTRIES = 40;
-const HISTORY_MIN_INTERVAL_MS = 10 * 60 * 1000;
 
 async function stepzGetUserId() {
   const sb = typeof getStepzSupabase === 'function' ? getStepzSupabase() : null;
@@ -69,10 +68,8 @@ async function stepzPruneStateHistory(sb, userId) {
 }
 
 /**
- * Insere no histórico só quando útil:
- * - salta se o estado for idêntico ao último snapshot
- * - em reason "save", salta se a última entrada for de há menos de 10 min
- * - reason "manual" ignora o throttle (ainda deduplica estado idêntico)
+ * Insere no histórico só quando o estado difere do último snapshot.
+ * Saves iguais (retries / flush sem mudança) não criam linha nova.
  */
 async function stepzInsertStateHistory(sb, userId, state, reason) {
   const reasonKey = reason || 'save';
@@ -89,12 +86,6 @@ async function stepzInsertStateHistory(sb, userId, state, reason) {
     const prevJson = stepzStableStateJson(latest.row.state);
     if (prevJson && nextJson && prevJson === nextJson) {
       return { ok: true, skipped: true, reason: 'duplicate' };
-    }
-    if (reasonKey !== 'manual' && latest.row.created_at) {
-      const lastMs = new Date(latest.row.created_at).getTime();
-      if (!Number.isNaN(lastMs) && Date.now() - lastMs < HISTORY_MIN_INTERVAL_MS) {
-        return { ok: true, skipped: true, reason: 'throttled' };
-      }
     }
   }
 

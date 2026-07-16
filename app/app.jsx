@@ -2214,7 +2214,7 @@ function StateHistoryModal({ open, onClose, onRestore }) {
         <div style={{ padding: '16px 18px', borderBottom: `1px solid ${stepzTokens.border}` }}>
           <div id="stepz-history-title" style={{ fontSize: 15, fontWeight: 600 }}>Histórico na nuvem</div>
           <div style={{ fontSize: 12, color: stepzTokens.textDim, marginTop: 4 }}>
-            Até {40} snapshots (só quando o estado muda; automáticos no máx. 1 / 10 min).
+            Até {40} snapshots (só quando o estado muda em relação ao último).
           </div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px' }}>
