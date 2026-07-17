@@ -853,9 +853,6 @@ function LiveStairs({
   const hoverHabitAccent = hoverIsHabit
     ? (hoverHabitDecade ? STAIRS_MODAL_GOLD_ACCENT : hoverStepBaseFill)
     : '';
-  const hoverHabitModalBg = hoverIsHabit && hoverHabitAccent
-    ? `linear-gradient(168deg, color-mix(in srgb, ${hoverHabitAccent} 28%, rgb(8,8,11)) 0%, rgb(9,9,11) 50%, rgb(10,10,12) 100%)`
-    : 'rgba(10,10,12,0.96)';
   /* Tasks: chip = projeto. Metas: chip = paleta ou categoria. Hábitos: sem chip — cor só no modal. */
   const hoverIsTask = hoverRich?.kind === 'task';
   const hoverProjectName = hoverIsTask ? String(hoverRich?.project || '').trim() : '';
@@ -875,10 +872,14 @@ function LiveStairs({
     hoverChipLabel = hoverCat?.label ?? '—';
   }
   const hoverShowMainChip = !hoverIsHabit && !!hoverChipLabel && hoverChipLabel !== '—';
-  /* Cor de acento do degrau para a borda do popup (respeita projeto/categoria/hábito). */
-  const hoverBorderAccent = hoverIsHabit
+  /* Acento do degrau, unificado para todos os tipos (respeita projeto/categoria/hábito).
+     O popup fica igual ao dos hábitos: borda inteira + fundo com gradiente na cor, um pouco mais vivo. */
+  const hoverAccent = hoverIsHabit
     ? (hoverHabitAccent || accentFallbackHover)
     : (hoverChipBg || hoverStepBaseFill || accentFallbackHover);
+  const hoverModalBg = hoverData
+    ? `linear-gradient(168deg, color-mix(in srgb, ${hoverAccent} 38%, rgb(8,8,11)) 0%, rgb(9,9,11) 52%, rgb(10,10,12) 100%)`
+    : 'rgba(10,10,12,0.96)';
   const currentLevel = Math.floor(currentIdx / STEPS_PER_LEVEL) + 1;
   const stepsInLevel = currentIdx % STEPS_PER_LEVEL;
 
@@ -993,20 +994,17 @@ function LiveStairs({
             position: 'absolute',
             left: Math.min(hover.x + 14, Math.max(8, size.w - 304)),
             top: Math.max(hover.y - 72, 8),
-            background: hoverHabitModalBg,
-            border: `1px solid ${hoverIsHabit && hoverHabitAccent ? hoverHabitAccent : stepzTokens.borderStrong}`,
-            borderLeft: `3px solid color-mix(in srgb, ${hoverBorderAccent} 38%, transparent)`,
-            borderRadius: 10, padding: '12px 14px 12px 13px',
+            background: hoverModalBg,
+            border: `1px solid ${hoverAccent}`,
+            borderRadius: 10, padding: '12px 14px',
             pointerEvents: 'none',
-            boxShadow: hoverIsHabit && hoverHabitAccent
-              ? `0 12px 44px rgba(0,0,0,0.58), 0 0 40px ${hoverHabitAccent}33`
-              : '0 12px 44px rgba(0,0,0,0.55)',
+            boxShadow: `0 12px 44px rgba(0,0,0,0.58), 0 0 40px color-mix(in srgb, ${hoverAccent} 22%, transparent)`,
             minWidth: 200, maxWidth: 300, zIndex: 2,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
               <div style={{
                 fontSize: 10,
-                color: hoverIsHabit && hoverHabitAccent ? hoverHabitAccent : stepzTokens.accent,
+                color: hoverAccent,
                 letterSpacing: 0.45, textTransform: 'uppercase',
               }}>
                 degrau {hover.i + 1}
@@ -1014,10 +1012,10 @@ function LiveStairs({
               <div style={{
                 fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase',
                 padding: '3px 8px', borderRadius: 999,
-                border: `1px solid ${hoverIsHabit && hoverHabitAccent ? hoverHabitAccent : stepzTokens.border}`,
-                color: hoverIsHabit && hoverHabitAccent ? hoverHabitAccent : stepzTokens.textDim,
+                border: `1px solid ${hoverAccent}`,
+                color: hoverAccent,
                 fontFamily: stepzTokens.fontMono,
-                background: hoverIsHabit && hoverHabitAccent ? `${hoverHabitAccent}14` : 'transparent',
+                background: `color-mix(in srgb, ${hoverAccent} 12%, transparent)`,
               }}>
                 {hoverRich.kind === 'goal' ? 'meta' : hoverRich.kind === 'habit' ? 'hábito' : hoverRich.kind === 'task' ? 'task' : '—'}
               </div>
