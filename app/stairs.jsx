@@ -875,6 +875,10 @@ function LiveStairs({
     hoverChipLabel = hoverCat?.label ?? '—';
   }
   const hoverShowMainChip = !hoverIsHabit && !!hoverChipLabel && hoverChipLabel !== '—';
+  /* Cor de acento do degrau para a borda do popup (respeita projeto/categoria/hábito). */
+  const hoverBorderAccent = hoverIsHabit
+    ? (hoverHabitAccent || accentFallbackHover)
+    : (hoverChipBg || hoverStepBaseFill || accentFallbackHover);
   const currentLevel = Math.floor(currentIdx / STEPS_PER_LEVEL) + 1;
   const stepsInLevel = currentIdx % STEPS_PER_LEVEL;
 
@@ -991,7 +995,8 @@ function LiveStairs({
             top: Math.max(hover.y - 72, 8),
             background: hoverHabitModalBg,
             border: `1px solid ${hoverIsHabit && hoverHabitAccent ? hoverHabitAccent : stepzTokens.borderStrong}`,
-            borderRadius: 10, padding: '12px 14px',
+            borderLeft: `3px solid color-mix(in srgb, ${hoverBorderAccent} 38%, transparent)`,
+            borderRadius: 10, padding: '12px 14px 12px 13px',
             pointerEvents: 'none',
             boxShadow: hoverIsHabit && hoverHabitAccent
               ? `0 12px 44px rgba(0,0,0,0.58), 0 0 40px ${hoverHabitAccent}33`
