@@ -644,28 +644,28 @@ function LiveStairs({
       ? accentFallback
       : liveStairsStepBaseCatFill(stepData, habits, tasks, categories, projectColors, accentFallback);
 
-    /* Novo visual "logo": cada degrau e uma coluna cheia da base ate o topo.
-       - corpo (columnFill): roxo (gradiente) nos degraus normais, dourado nas dezenas, faint nos futuros.
-       - topo (capFill): unica parte que muda com a cor da categoria da task concluida. */
-    let columnFill;
-    let capFill;
-    let columnStroke = 'none';
+    let treadFill;
+    let riserFill;
+    let riserStroke = 'rgba(255,255,255,0.06)';
     if (!completed) {
-      columnFill = 'rgba(255,255,255,0.05)';
-      capFill = 'rgba(255,255,255,0.10)';
+      treadFill = 'rgba(255,255,255,0.08)';
+      riserFill = 'rgba(255,255,255,0.02)';
     } else if (isDecade) {
-      columnFill = STAIRS_GOLD_FILL;
-      capFill = STAIRS_GOLD_FILL;
-      columnStroke = 'rgba(0,0,0,0.18)';
+      treadFill = STAIRS_GOLD_FILL;
+      riserFill = STAIRS_GOLD_RISER;
+      riserStroke = 'rgba(0,0,0,0.18)';
+    } else if (isGoalStep) {
+      treadFill = catFill;
+      riserFill = `color-mix(in oklch, ${catFill} 36%, oklch(0.12 0.03 285))`;
+      riserStroke = 'rgba(255,255,255,0.1)';
     } else {
-      columnFill = 'url(#stepzStairColumn)';
-      capFill = catFill;
+      treadFill = catFill;
+      riserFill = 'rgba(255,255,255,0.035)';
+      riserStroke = 'rgba(255,255,255,0.08)';
     }
 
     const treadH = Math.max(2, stepH * 0.35);
     const riserH = stepH - treadH;
-    const columnH = baseY - y;
-    const capH = Math.max(3, stepH * 0.5);
 
     /** Número na face frontal (riser): fundo escuro pede texto claro; marco dourado usa tons âmbar. */
     const riserLabelFill = !completed ? 'rgba(255,255,255,0.28)'
@@ -688,11 +688,13 @@ function LiveStairs({
         onMouseLeave={() => setHover(null)}
         onClick={() => completed && onStepClick && onStepClick(i)}
       >
-        <rect x={x} y={y} width={w} height={columnH} fill="transparent" />
-        <rect x={x} y={y} width={w} height={columnH} fill={columnFill}
-          opacity={completed ? 1 : 0.5}
-          stroke={columnStroke} strokeWidth={columnStroke === 'none' ? 0 : (stepH > 14 ? 1 : 0.5)} />
-        <rect x={x} y={y} width={w} height={capH} fill={capFill} opacity={completed ? 1 : 0.6} />
+        <rect x={x} y={y} width={w} height={stepH} fill="transparent" />
+        <rect x={x} y={y} width={w} height={treadH} fill={treadFill} opacity={completed ? 1 : 0.5} />
+        {stepH > 6 && (
+          <rect x={x} y={y + treadH} width={w} height={riserH}
+            fill={riserFill}
+            stroke={riserStroke} strokeWidth={stepH > 14 ? 1 : 0.5} />
+        )}
         {completed && isGoalStep && (() => {
           const medalW = Math.min(Math.max(w * 0.92, 38), 78);
           const medalH = medalW * (180 / 120);
@@ -969,10 +971,6 @@ function LiveStairs({
               <stop offset="0%" stopColor="#f7ebb8" />
               <stop offset="42%" stopColor="#e9c04a" />
               <stop offset="100%" stopColor="#b8892a" />
-            </linearGradient>
-            <linearGradient id="stepzStairColumn" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#c79bff" />
-              <stop offset="100%" stopColor="#7c5cff" />
             </linearGradient>
             <pattern id="hatchLive" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(-45)">
               <line x1="0" y1="0" x2="0" y2="7" stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
