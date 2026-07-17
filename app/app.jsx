@@ -1900,6 +1900,7 @@ function App() {
             onUpdateTask={updateTask}
             onRenameProject={renameProject}
             onToggleHabit={toggleHabitToday}
+            onToggleHabitDate={toggleHabitDate}
             onEditHabit={(h) => setEditingHabit(h)}
             onStepClick={(i) => setStepDetail(i)}
             taskTagColors={taskTagColors}
@@ -2638,7 +2639,7 @@ function HomeInspirationQuote() {
 }
 
 function HomeView({ state, totalSteps, todaySteps, dayStreak,
-  onCompleteTask, onUncompleteTask, onAddTask, onDeleteTask, onOpenCreateModal, onEditTask, onUpdateTask, onRenameProject, onToggleHabit, onEditHabit, onStepClick,
+  onCompleteTask, onUncompleteTask, onAddTask, onDeleteTask, onOpenCreateModal, onEditTask, onUpdateTask, onRenameProject, onToggleHabit, onToggleHabitDate, onEditHabit, onStepClick,
   taskTagColors, allKnownTaskTags, onSetTaskTagColor, onSetProjectColor }) {
   const { isMobile } = useStepzViewport();
   const [tagEditor, setTagEditor] = useState(null);
@@ -2713,7 +2714,7 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
         <Panel2 title="Hábitos diários">
           {state.habits.length === 0 ? <Empty msg="Vá para Hábitos para criar." small /> :
             state.habits.map(h => (
-              <HabitRowToday key={h.id} habit={h} categories={state.categories} onToggle={() => onToggleHabit(h.id)} onEdit={onEditHabit ? () => onEditHabit(h) : undefined} />
+              <HabitRowToday key={h.id} habit={h} categories={state.categories} onToggle={() => onToggleHabit(h.id)} onToggleDate={onToggleHabitDate ? (date) => onToggleHabitDate(h.id, date) : undefined} onEdit={onEditHabit ? () => onEditHabit(h) : undefined} />
             ))
           }
         </Panel2>
@@ -6291,11 +6292,23 @@ function TaskProjectSection({ project, count, children, onRenameProject, showTas
   );
 }
 
-function HabitRowToday({ habit, onToggle, categories, onEdit }) {
+function HabitRowToday({ habit, onToggle, onToggleDate, categories, onEdit }) {
   const today = todayStr();
   const doneToday = habit.history.includes(today);
   const streak = computeHabitStreak(habit.history);
   const accent = habitAccentCss(habit, categories);
+  const slotDays = 10;
+  const days = [];
+  for (let i = slotDays - 1; i >= 0; i--) {
+    const ds = addCalendarDays(today, -i);
+    days.push({
+      date: ds,
+      done: habit.history.includes(ds),
+      letter: weekdayLetterPt(ds),
+      isToday: ds === today,
+    });
+  }
+  const SLOT = 14;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0' }}>
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', minWidth: 0 }} onClick={onToggle}>
@@ -6312,6 +6325,56 @@ function HabitRowToday({ habit, onToggle, categories, onEdit }) {
           <div style={{ fontSize: 11, color: accent, marginTop: 2, fontWeight: 500 }}>
             {streak} {streak === 1 ? 'dia' : 'dias'} seguidos
           </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 3 }}>
+          {days.map(d => (
+            <div key={`l-${d.date}`} style={{
+              width: SLOT,
+              textAlign: 'center',
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: 0.4,
+              color: d.isToday ? accent : stepzTokens.textFaint,
+              lineHeight: 1,
+            }}>{d.letter}</div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 3 }}>
+          {days.map(d => {
+            const clickable = !!onToggleDate;
+            const dateLabel = new Date(`${d.date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+            const title = `${dateLabel}${d.isToday ? ' (hoje)' : ''} · ${d.done ? 'feito — clique para desmarcar' : 'clique para marcar'}`;
+            const commonStyle = {
+              width: SLOT,
+              height: SLOT,
+              borderRadius: 3,
+              background: d.done ? accent : 'rgba(255,255,255,0.06)',
+              border: d.isToday && !d.done ? `1px solid color-mix(in srgb, ${accent} 55%, transparent)` : 'none',
+              padding: 0,
+              boxSizing: 'border-box',
+            };
+            if (!clickable) {
+              return <div key={d.date} title={title} style={commonStyle} />;
+            }
+            return (
+              <button
+                key={d.date}
+                type="button"
+                title={title}
+                aria-pressed={d.done}
+                onClick={(e) => { e.stopPropagation(); onToggleDate(d.date); }}
+                style={{
+                  ...commonStyle,
+                  cursor: 'pointer',
+                  appearance: 'none',
+                  WebkitAppearance: 'none',
+                  boxShadow: 'none',
+                }}
+              />
+            );
+          })}
         </div>
       </div>
       {onEdit ? (
