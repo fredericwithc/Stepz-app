@@ -6310,24 +6310,43 @@ function HabitRowToday({ habit, onToggle, onToggleDate, categories, onEdit }) {
   }
   const SLOT = 14;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0' }}>
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', minWidth: 0 }} onClick={onToggle}>
-        <div style={{
-          width: 18, height: 18, borderRadius: 9,
-          border: `1.5px solid ${doneToday ? accent : 'rgba(255,255,255,0.22)'}`,
-          background: doneToday ? accent : 'transparent',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        }}>
-          {doneToday && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#0a0a0b" strokeWidth="2" strokeLinecap="round"><path d="M2 5l2 2 4-4" /></svg>}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, color: stepzTokens.text }}>{habit.title}</div>
-          <div style={{ fontSize: 11, color: accent, marginTop: 2, fontWeight: 500 }}>
-            {streak} {streak === 1 ? 'dia' : 'dias'} seguidos
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', minWidth: 0 }} onClick={onToggle}>
+          <div style={{
+            width: 18, height: 18, borderRadius: 9,
+            border: `1.5px solid ${doneToday ? accent : 'rgba(255,255,255,0.22)'}`,
+            background: doneToday ? accent : 'transparent',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            {doneToday && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#0a0a0b" strokeWidth="2" strokeLinecap="round"><path d="M2 5l2 2 4-4" /></svg>}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, color: stepzTokens.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{habit.title}</div>
+            <div style={{ fontSize: 11, color: accent, marginTop: 2, fontWeight: 500 }}>
+              {streak} {streak === 1 ? 'dia' : 'dias'} seguidos
+            </div>
           </div>
         </div>
+        {onEdit ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            style={{
+              flexShrink: 0,
+              background: 'rgba(255,255,255,0.06)',
+              border: `1px solid ${stepzTokens.border}`,
+              color: stepzTokens.textDim,
+              fontSize: 11,
+              padding: '4px 8px',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontFamily: stepzTokens.font,
+            }}
+          >editar</button>
+        ) : null}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingLeft: 30 }}>
         <div style={{ display: 'flex', gap: 3 }}>
           {days.map(d => (
             <div key={`l-${d.date}`} style={{
@@ -6377,23 +6396,6 @@ function HabitRowToday({ habit, onToggle, onToggleDate, categories, onEdit }) {
           })}
         </div>
       </div>
-      {onEdit ? (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onEdit(); }}
-          style={{
-            flexShrink: 0,
-            background: 'rgba(255,255,255,0.06)',
-            border: `1px solid ${stepzTokens.border}`,
-            color: stepzTokens.textDim,
-            fontSize: 11,
-            padding: '4px 8px',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontFamily: stepzTokens.font,
-          }}
-        >editar</button>
-      ) : null}
     </div>
   );
 }
