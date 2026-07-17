@@ -263,28 +263,6 @@ function parseSyncedStateJson(json) {
   }
 }
 
-function exportStateBackupFile(state, userEmail) {
-  const day = typeof calendarDateKey === 'function' ? calendarDateKey(new Date()) : new Date().toISOString().slice(0, 10);
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  const emailSlug = String(userEmail || 'local').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
-  a.download = `stepz-backup-${day}${emailSlug ? `-${emailSlug}` : ''}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 500);
-}
-
-async function parseImportedStateFile(file) {
-  const text = await file.text();
-  const parsed = JSON.parse(text);
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('O ficheiro não contém um objeto JSON válido.');
-  }
-  return { ...defaultState(), ...parsed };
-}
-
 /** Cor do projeto: override em `projectColors` ou paleta determinística (definida em stairs.jsx). */
 function stepzResolveProjectColor(projectName, projectColors) {
   const map = projectColors && typeof projectColors === 'object' && !Array.isArray(projectColors) ? projectColors : {};
@@ -737,7 +715,6 @@ function App() {
   const [syncPhase, setSyncPhase] = useState('idle'); // idle | loading | ready | offline
   const [syncNotice, setSyncNotice] = useState(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
-  const importFileInputRef = useRef(null);
   const { isMobile } = useStepzViewport();
 
   const stateRef = useRef(state);
@@ -1815,51 +1792,6 @@ function App() {
     );
   }
 
-  const handleExportBackup = () => {
-    exportStateBackupFile(state, session.email);
-  };
-
-  const handleImportBackupClick = () => {
-    if (importFileInputRef.current) importFileInputRef.current.click();
-  };
-
-  const handleImportFileChange = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
-    const userKey = activeUserKeyRef.current;
-    try {
-      const parsed = await parseImportedStateFile(file);
-      const merged = applyAutoReopenRecurringState(parsed);
-      if (typeof isSuspiciousWipe === 'function' && isSuspiciousWipe(merged, state)) {
-        if (!window.confirm('Este backup parece vazio em relação aos dados actuais. Importar mesmo assim?')) return;
-      } else if (!window.confirm('Substituir os dados actuais por este backup?')) {
-        return;
-      }
-      setState(merged);
-      lastSyncedJsonRef.current = '';
-      if (userKey && typeof touchLastGoodIfRich === 'function') touchLastGoodIfRich(userKey, merged);
-      if (userKey && supabaseOn) {
-        const rs = typeof window !== 'undefined' ? window.stepzRemoteState : null;
-        if (rs && typeof rs.save === 'function') {
-          const saveRes = await rs.save(merged, { force: true, reason: 'manual' });
-          if (saveRes && saveRes.ok) {
-            const json = JSON.stringify(merged);
-            lastSyncedJsonRef.current = json;
-            if (typeof saveStateCache === 'function') {
-              saveStateCache(userKey, merged, buildCacheMeta(saveRes.updatedAt, json));
-            }
-          }
-        }
-      } else if (userKey) {
-        saveState(userKey, merged);
-      }
-      setSyncNotice(null);
-    } catch (err) {
-      window.alert(err && err.message ? err.message : 'Não foi possível importar o ficheiro.');
-    }
-  };
-
   const handleRestoreFromHistory = async (historyId) => {
     const userKey = activeUserKeyRef.current;
     const rs = typeof window !== 'undefined' ? window.stepzRemoteState : null;
@@ -1911,16 +1843,7 @@ function App() {
           clearAuthSession();
           setSession(null);
         }}
-        onExportBackup={handleExportBackup}
-        onImportBackup={handleImportBackupClick}
         onOpenHistory={supabaseOn ? () => setHistoryModalOpen(true) : undefined}
-      />
-      <input
-        ref={importFileInputRef}
-        type="file"
-        accept="application/json,.json"
-        style={{ display: 'none' }}
-        onChange={handleImportFileChange}
       />
       <StateHistoryModal
         open={historyModalOpen}
@@ -2298,7 +2221,7 @@ function StateHistoryModal({ open, onClose, onRestore }) {
   );
 }
 
-function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubtitle, onExportBackup, onImportBackup, onOpenHistory }) {
+function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubtitle, onOpenHistory }) {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   const buttonRef = useRef(null);
@@ -2419,32 +2342,6 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubt
           <span>Editar senha</span>
         </button>
       ) : null}
-      {typeof onExportBackup === 'function' ? (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => { setOpen(false); onExportBackup(); }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-          style={itemBtn}
-        >
-          <span aria-hidden style={{ fontSize: 14 }}>⬇</span>
-          <span>Exportar backup (JSON)</span>
-        </button>
-      ) : null}
-      {typeof onImportBackup === 'function' ? (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => { setOpen(false); onImportBackup(); }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-          style={itemBtn}
-        >
-          <span aria-hidden style={{ fontSize: 14 }}>⬆</span>
-          <span>Restaurar de ficheiro</span>
-        </button>
-      ) : null}
       {typeof onOpenHistory === 'function' ? (
         <button
           type="button"
@@ -2520,7 +2417,7 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubt
   );
 }
 
-function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassword, onExportBackup, onImportBackup, onOpenHistory }) {
+function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassword, onOpenHistory }) {
   const { isMobile } = useStepzViewport();
   const tabs = [
     { id: 'home', label: 'Início' },
@@ -2615,8 +2512,6 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
               onLogout={onLogout}
               isMobile={isMobile}
               dateSubtitle={isMobile ? todayFull : undefined}
-              onExportBackup={onExportBackup}
-              onImportBackup={onImportBackup}
               onOpenHistory={onOpenHistory}
             />
           </div>
