@@ -667,10 +667,10 @@ function LiveStairs({
     const columnH = baseY - y;
     const capH = Math.max(3, stepH * 0.5);
 
-    /** Número na face frontal (riser): fundo escuro pede texto claro; marco dourado usa tons âmbar. */
+    /** Número do degrau: lavanda claro da marca lê bem no roxo escuro; dezena dourada usa tom âmbar escuro. */
     const riserLabelFill = !completed ? 'rgba(255,255,255,0.28)'
-      : isDecade ? 'rgba(255, 236, 190, 0.95)'
-        : 'rgba(255,255,255,0.52)';
+      : isDecade ? '#3a2410'
+        : (typeof stepzTokens !== 'undefined' ? stepzTokens.highlight : '#e9dcff');
 
     elements.push(
       <g key={`s-${i}`} data-step={i}
@@ -753,7 +753,7 @@ function LiveStairs({
         {lod === 'close' && completed && stepData && stepH > 10 && riserH > 4 && (
           <text
             x={x + w / 2}
-            y={y + treadH + riserH / 2}
+            y={y + capH + Math.max(11, stepH * 0.75)}
             textAnchor="middle"
             dominantBaseline="middle"
             fontSize={Math.max(8, Math.min(13, riserH * 0.62, w * 0.2))}
@@ -971,8 +971,8 @@ function LiveStairs({
               <stop offset="100%" stopColor="#b8892a" />
             </linearGradient>
             <linearGradient id="stepzStairColumn" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#c79bff" />
-              <stop offset="100%" stopColor="#7c5cff" />
+              <stop offset="0%" stopColor="#8f63e0" />
+              <stop offset="100%" stopColor="#3f22a0" />
             </linearGradient>
             <pattern id="hatchLive" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(-45)">
               <line x1="0" y1="0" x2="0" y2="7" stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
