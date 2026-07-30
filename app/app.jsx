@@ -1894,8 +1894,7 @@ function App() {
             totalSteps={totalSteps} todaySteps={todaySteps}
             dayStreak={dayStreak}
             onCompleteTask={completeTask} onUncompleteTask={uncompleteTask}
-            onAddTask={addTask} onDeleteTask={deleteTask}
-            onOpenCreateModal={() => setTaskModalOpen(true)}
+            onDeleteTask={deleteTask}
             onEditTask={(task) => setEditingTask(task)}
             onUpdateTask={updateTask}
             onRenameProject={renameProject}
@@ -2639,7 +2638,7 @@ function HomeInspirationQuote() {
 }
 
 function HomeView({ state, totalSteps, todaySteps, dayStreak,
-  onCompleteTask, onUncompleteTask, onAddTask, onDeleteTask, onOpenCreateModal, onEditTask, onUpdateTask, onRenameProject, onToggleHabit, onToggleHabitDate, onEditHabit, onStepClick,
+  onCompleteTask, onUncompleteTask, onDeleteTask, onEditTask, onUpdateTask, onRenameProject, onToggleHabit, onToggleHabitDate, onEditHabit, onStepClick,
   taskTagColors, allKnownTaskTags, onSetTaskTagColor, onSetProjectColor }) {
   const { isMobile } = useStepzViewport();
   const [tagEditor, setTagEditor] = useState(null);
@@ -2681,9 +2680,9 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
           <Tile label="Hoje" value={todaySteps} accent={stepzTokens.warn} />
           <Tile label="Streak" value={`${dayStreak}d`} accent={stepzTokens.success} />
         </div>
-        <Panel2 title="Tasks de hoje" action={<TaskAddButton onClick={onOpenCreateModal} />}>
+        <Panel2 title="Tasks de hoje">
           {todayTasks.length === 0 ? (
-            <Empty msg="Nenhuma task. Adicione uma acima." />
+            <Empty msg="Nenhuma task. Crie uma na aba Tasks." />
           ) : todayByProject.map(([project, tasks]) => (
             <TaskProjectSection
               key={`today-${project}`}
