@@ -2680,7 +2680,7 @@ function HomeView({ state, totalSteps, todaySteps, dayStreak,
           <Tile label="Hoje" value={todaySteps} accent={stepzTokens.warn} />
           <Tile label="Streak" value={`${dayStreak}d`} accent={stepzTokens.success} />
         </div>
-        <Panel2 title="Tasks de hoje">
+        <Panel2 title="Tasks a fazer">
           {todayTasks.length === 0 ? (
             <Empty msg="Nenhuma task. Crie uma na aba Tasks." />
           ) : todayByProject.map(([project, tasks]) => (
