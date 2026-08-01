@@ -4,6 +4,8 @@ const { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, useC
 const STEPZ_BREAKPOINT_MOBILE = 768;
 const STEPZ_BREAKPOINT_TABLET = 1024;
 const STEPZ_BREAKPOINT_NARROW = 430;
+/** Destino da Caixa de sugestões (mailto). */
+const STEPZ_SUGGESTIONS_TO = 'fredericcbl@gmail.com';
 
 const StepzViewportContext = createContext({
   width: 1024,
@@ -712,6 +714,7 @@ function App() {
   const [habitModalOpen, setHabitModalOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState(null);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [suggestionsModalOpen, setSuggestionsModalOpen] = useState(false);
   const [syncPhase, setSyncPhase] = useState('idle'); // idle | loading | ready | offline
   const [syncNotice, setSyncNotice] = useState(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -1844,6 +1847,7 @@ function App() {
           setSession(null);
         }}
         onOpenHistory={supabaseOn ? () => setHistoryModalOpen(true) : undefined}
+        onOpenSuggestions={() => setSuggestionsModalOpen(true)}
       />
       <StateHistoryModal
         open={historyModalOpen}
@@ -2038,6 +2042,12 @@ function App() {
           }}
         />
       ) : null}
+      {suggestionsModalOpen ? (
+        <SuggestionsModal
+          userEmail={session.email}
+          onClose={() => setSuggestionsModalOpen(false)}
+        />
+      ) : null}
       </TaskGridColumnsProvider>
     </div>
   );
@@ -2221,7 +2231,7 @@ function StateHistoryModal({ open, onClose, onRestore }) {
   );
 }
 
-function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubtitle, onOpenHistory }) {
+function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubtitle, onOpenHistory, onOpenSuggestions }) {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   const buttonRef = useRef(null);
@@ -2355,6 +2365,19 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubt
           <span>Histórico na nuvem</span>
         </button>
       ) : null}
+      {typeof onOpenSuggestions === 'function' ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => { setOpen(false); onOpenSuggestions(); }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          style={itemBtn}
+        >
+          <span aria-hidden style={{ fontSize: 14 }}>✉</span>
+          <span>Caixa de sugestões</span>
+        </button>
+      ) : null}
       {typeof onLogout === 'function' ? (
         <button
           type="button"
@@ -2417,7 +2440,7 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubt
   );
 }
 
-function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassword, onOpenHistory }) {
+function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassword, onOpenHistory, onOpenSuggestions }) {
   const { isMobile } = useStepzViewport();
   const tabs = [
     { id: 'home', label: 'Início' },
@@ -2513,6 +2536,7 @@ function AppHeader({ tab, setTab, totalSteps, userEmail, onLogout, onChangePassw
               isMobile={isMobile}
               dateSubtitle={isMobile ? todayFull : undefined}
               onOpenHistory={onOpenHistory}
+              onOpenSuggestions={onOpenSuggestions}
             />
           </div>
         </div>
@@ -7152,6 +7176,93 @@ function ChangePasswordModal({ onClose, onSubmit }) {
           <button type="submit" disabled={busy} style={{ ...modalPrimaryBtnStyle, opacity: busy ? 0.7 : 1, cursor: busy ? 'wait' : 'pointer' }}>
             {busy ? 'Salvando…' : 'Salvar senha'}
           </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function SuggestionsModal({ userEmail, onClose }) {
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const msg = String(message || '').trim();
+    if (!msg) {
+      setError('Escreva a mensagem da sugestão.');
+      return;
+    }
+    const subj = String(subject || '').trim() || 'Sugestão Stepz';
+    const body = `${msg}\n\n---\nEnviado por: ${userEmail || 'desconhecido'}\n`;
+    const href = `mailto:${STEPZ_SUGGESTIONS_TO}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+    window.location.href = href;
+    onClose();
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="suggestions-modal-title"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 50,
+        padding: 16,
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          width: '100%',
+          maxWidth: 420,
+          background: stepzTokens.panel,
+          border: `1px solid ${stepzTokens.borderStrong}`,
+          borderRadius: 14,
+          padding: '22px 22px 20px',
+          boxShadow: '0 24px 48px rgba(0,0,0,0.45)',
+        }}
+      >
+        <div id="suggestions-modal-title" style={{ fontSize: 16, fontWeight: 600, letterSpacing: -0.2, marginBottom: 4 }}>
+          Caixa de sugestões
+        </div>
+        <div style={{ fontSize: 12, color: stepzTokens.textDim, marginBottom: 16, lineHeight: 1.4 }}>
+          Envie uma ideia, elogio ou relatório de problema. Isso abre o seu e-mail com a mensagem pronta.
+        </div>
+        <label htmlFor="suggestions-subject" style={{ display: 'block', fontSize: 11, fontWeight: 600, color: stepzTokens.textDim, marginBottom: 6 }}>
+          Assunto
+        </label>
+        <input
+          id="suggestions-subject"
+          value={subject}
+          onChange={(ev) => { setSubject(ev.target.value); setError(''); }}
+          placeholder="Ex.: Ideia para a escada"
+          style={{ ...modalInputStyle, boxSizing: 'border-box', marginBottom: 14 }}
+        />
+        <label htmlFor="suggestions-message" style={{ display: 'block', fontSize: 11, fontWeight: 600, color: stepzTokens.textDim, marginBottom: 6 }}>
+          Mensagem
+        </label>
+        <textarea
+          id="suggestions-message"
+          value={message}
+          onChange={(ev) => { setMessage(ev.target.value); setError(''); }}
+          placeholder="Escreva sua sugestão…"
+          rows={5}
+          style={{ ...modalInputStyle, boxSizing: 'border-box', minHeight: 110, resize: 'vertical', marginBottom: error ? 10 : 14 }}
+        />
+        {error ? (
+          <div style={{ fontSize: 12, color: stepzTokens.warn, marginBottom: 12, lineHeight: 1.35 }}>{error}</div>
+        ) : null}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+          <button type="button" onClick={onClose} style={modalGhostBtnStyle}>cancelar</button>
+          <button type="submit" style={modalPrimaryBtnStyle}>Enviar</button>
         </div>
       </form>
     </div>
