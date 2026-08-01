@@ -7182,32 +7182,19 @@ function ChangePasswordModal({ onClose, onSubmit }) {
   );
 }
 
-function openMailtoHref(href) {
-  try {
-    const a = document.createElement('a');
-    a.href = href;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    return true;
-  } catch (_) {
-    try {
-      window.location.href = href;
-      return true;
-    } catch (__) {
-      return false;
-    }
-  }
+function buildSuggestionsComposeUrls(subject, message, userEmail) {
+  const subj = String(subject || '').trim() || 'Sugestão Stepz';
+  const msg = String(message || '').trim();
+  const body = `${msg}\n\n---\nEnviado por: ${userEmail || 'desconhecido'}\n`;
+  const gmailHref = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(STEPZ_SUGGESTIONS_TO)}&su=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+  return { gmailHref };
 }
 
 function SuggestionsModal({ userEmail, onClose }) {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [mailtoHref, setMailtoHref] = useState('');
+  const [composeHref, setComposeHref] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -7216,12 +7203,10 @@ function SuggestionsModal({ userEmail, onClose }) {
       setError('Escreva a mensagem da sugestão.');
       return;
     }
-    const subj = String(subject || '').trim() || 'Sugestão Stepz';
-    const body = `${msg}\n\n---\nEnviado por: ${userEmail || 'desconhecido'}\n`;
-    const href = `mailto:${STEPZ_SUGGESTIONS_TO}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
-    openMailtoHref(href);
-    setMailtoHref(href);
+    const { gmailHref } = buildSuggestionsComposeUrls(subject, msg, userEmail);
+    setComposeHref(gmailHref);
     setError('');
+    window.open(gmailHref, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -7257,9 +7242,9 @@ function SuggestionsModal({ userEmail, onClose }) {
           Caixa de sugestões
         </div>
         <div style={{ fontSize: 12, color: stepzTokens.textDim, marginBottom: 16, lineHeight: 1.4 }}>
-          Envie uma ideia, elogio ou relatório de problema. Isso abre o seu e-mail com a mensagem pronta.
+          Envie uma ideia, elogio ou relatório de problema. Isso abre o Gmail com a mensagem pronta para envio.
         </div>
-        {mailtoHref ? (
+        {composeHref ? (
           <div style={{
             fontSize: 13,
             color: stepzTokens.text,
@@ -7271,17 +7256,16 @@ function SuggestionsModal({ userEmail, onClose }) {
             background: 'rgba(124,92,255,0.1)',
           }}>
             <div style={{ marginBottom: 8 }}>
-              Se o app de e-mail não abriu sozinho, clique no link abaixo (ou configure um app de e-mail padrão no Windows).
+              Se a janela do Gmail não abriu (ou o navegador bloqueou o popup), use o link abaixo.
             </div>
             <a
-              href={mailtoHref}
-              style={{ color: stepzTokens.accent, fontWeight: 600, wordBreak: 'break-all' }}
+              href={composeHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: stepzTokens.accent, fontWeight: 600 }}
             >
-              Abrir e-mail com a sugestão
+              Abrir Gmail com a sugestão
             </a>
-            <div style={{ fontSize: 11, color: stepzTokens.textDim, marginTop: 10 }}>
-              Destino: {STEPZ_SUGGESTIONS_TO}
-            </div>
           </div>
         ) : (
           <>
@@ -7313,9 +7297,9 @@ function SuggestionsModal({ userEmail, onClose }) {
         ) : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <button type="button" onClick={onClose} style={modalGhostBtnStyle}>
-            {mailtoHref ? 'fechar' : 'cancelar'}
+            {composeHref ? 'fechar' : 'cancelar'}
           </button>
-          {!mailtoHref ? (
+          {!composeHref ? (
             <button type="submit" style={modalPrimaryBtnStyle}>Enviar</button>
           ) : null}
         </div>
