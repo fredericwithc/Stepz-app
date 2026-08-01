@@ -7182,10 +7182,32 @@ function ChangePasswordModal({ onClose, onSubmit }) {
   );
 }
 
+function openMailtoHref(href) {
+  try {
+    const a = document.createElement('a');
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return true;
+  } catch (_) {
+    try {
+      window.location.href = href;
+      return true;
+    } catch (__) {
+      return false;
+    }
+  }
+}
+
 function SuggestionsModal({ userEmail, onClose }) {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [mailtoHref, setMailtoHref] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -7197,8 +7219,9 @@ function SuggestionsModal({ userEmail, onClose }) {
     const subj = String(subject || '').trim() || 'Sugestão Stepz';
     const body = `${msg}\n\n---\nEnviado por: ${userEmail || 'desconhecido'}\n`;
     const href = `mailto:${STEPZ_SUGGESTIONS_TO}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
-    window.location.href = href;
-    onClose();
+    openMailtoHref(href);
+    setMailtoHref(href);
+    setError('');
   };
 
   return (
@@ -7236,33 +7259,65 @@ function SuggestionsModal({ userEmail, onClose }) {
         <div style={{ fontSize: 12, color: stepzTokens.textDim, marginBottom: 16, lineHeight: 1.4 }}>
           Envie uma ideia, elogio ou relatório de problema. Isso abre o seu e-mail com a mensagem pronta.
         </div>
-        <label htmlFor="suggestions-subject" style={{ display: 'block', fontSize: 11, fontWeight: 600, color: stepzTokens.textDim, marginBottom: 6 }}>
-          Assunto
-        </label>
-        <input
-          id="suggestions-subject"
-          value={subject}
-          onChange={(ev) => { setSubject(ev.target.value); setError(''); }}
-          placeholder="Ex.: Ideia para a escada"
-          style={{ ...modalInputStyle, boxSizing: 'border-box', marginBottom: 14 }}
-        />
-        <label htmlFor="suggestions-message" style={{ display: 'block', fontSize: 11, fontWeight: 600, color: stepzTokens.textDim, marginBottom: 6 }}>
-          Mensagem
-        </label>
-        <textarea
-          id="suggestions-message"
-          value={message}
-          onChange={(ev) => { setMessage(ev.target.value); setError(''); }}
-          placeholder="Escreva sua sugestão…"
-          rows={5}
-          style={{ ...modalInputStyle, boxSizing: 'border-box', minHeight: 110, resize: 'vertical', marginBottom: error ? 10 : 14 }}
-        />
+        {mailtoHref ? (
+          <div style={{
+            fontSize: 13,
+            color: stepzTokens.text,
+            lineHeight: 1.45,
+            marginBottom: 16,
+            padding: '12px 14px',
+            borderRadius: 10,
+            border: `1px solid ${stepzTokens.borderStrong}`,
+            background: 'rgba(124,92,255,0.1)',
+          }}>
+            <div style={{ marginBottom: 8 }}>
+              Se o app de e-mail não abriu sozinho, clique no link abaixo (ou configure um app de e-mail padrão no Windows).
+            </div>
+            <a
+              href={mailtoHref}
+              style={{ color: stepzTokens.accent, fontWeight: 600, wordBreak: 'break-all' }}
+            >
+              Abrir e-mail com a sugestão
+            </a>
+            <div style={{ fontSize: 11, color: stepzTokens.textDim, marginTop: 10 }}>
+              Destino: {STEPZ_SUGGESTIONS_TO}
+            </div>
+          </div>
+        ) : (
+          <>
+            <label htmlFor="suggestions-subject" style={{ display: 'block', fontSize: 11, fontWeight: 600, color: stepzTokens.textDim, marginBottom: 6 }}>
+              Assunto
+            </label>
+            <input
+              id="suggestions-subject"
+              value={subject}
+              onChange={(ev) => { setSubject(ev.target.value); setError(''); }}
+              placeholder="Ex.: Ideia para a escada"
+              style={{ ...modalInputStyle, boxSizing: 'border-box', marginBottom: 14 }}
+            />
+            <label htmlFor="suggestions-message" style={{ display: 'block', fontSize: 11, fontWeight: 600, color: stepzTokens.textDim, marginBottom: 6 }}>
+              Mensagem
+            </label>
+            <textarea
+              id="suggestions-message"
+              value={message}
+              onChange={(ev) => { setMessage(ev.target.value); setError(''); }}
+              placeholder="Escreva sua sugestão…"
+              rows={5}
+              style={{ ...modalInputStyle, boxSizing: 'border-box', minHeight: 110, resize: 'vertical', marginBottom: error ? 10 : 14 }}
+            />
+          </>
+        )}
         {error ? (
           <div style={{ fontSize: 12, color: stepzTokens.warn, marginBottom: 12, lineHeight: 1.35 }}>{error}</div>
         ) : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-          <button type="button" onClick={onClose} style={modalGhostBtnStyle}>cancelar</button>
-          <button type="submit" style={modalPrimaryBtnStyle}>Enviar</button>
+          <button type="button" onClick={onClose} style={modalGhostBtnStyle}>
+            {mailtoHref ? 'fechar' : 'cancelar'}
+          </button>
+          {!mailtoHref ? (
+            <button type="submit" style={modalPrimaryBtnStyle}>Enviar</button>
+          ) : null}
         </div>
       </form>
     </div>
