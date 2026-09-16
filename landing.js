@@ -54,11 +54,11 @@ const cam=document.getElementById('cam'),rail=document.getElementById('rail'),tr
 let SW=0,SH=0,EX=0,PH=0,AX=0,AY=0;const TICK=46;
 function dims(){const W=innerWidth,H=innerHeight;SW=Math.min(Math.max(W*.15,116),215);EX=Math.min(W*.82,1180);SH=Math.min(Math.max(H*.18,88),190);PH=W<1000?Math.min(Math.max(H*.84,380),H-72):Math.min(Math.max(H*.78,420),H-80);AX=W<1000?W*.07:W*.12;AY=H*.88}
 dims();
-cam.innerHTML=STEPS.map((s,i)=>`<div class="st${s.gold?' gold':''}${s.solo?' solo':''}${stepHasShot(s)?' has-shot':''}" id="st${i}"><div class="num">${String(i+1).padStart(2,'0')}</div><div class="name">${s.name}</div><div class="inner${stepHasShot(s)?' with-shot':''}"><div class="copy"><div class="tag"><i></i>${s.tag}</div>${s.h1?`<h1>${s.h1}</h1>`:`<h2>${s.h2}</h2>`}${stepBodyHtml(s)}${s.cta?`<div class="ctas"><a href="${s.cta===1?'app.html?mode=signup':'app.html'}" class="b1">${s.cta===1?'Começar grátis':'Construir o primeiro degrau'}</a>${s.cta===1?'<a href="#s1" class="b2">Ver como funciona</a>':'<a href="app.html" class="b2">Entrar</a>'}</div>`:''}</div>${stepShotHtml(s)}</div></div>`).join('');
+cam.innerHTML=STEPS.map((s,i)=>`<div class="st${s.gold?' gold':''}${s.solo?' solo':''}${stepHasShot(s)?' has-shot':''}" id="st${i}"><div class="num">${String(i+1).padStart(2,'0')}</div><div class="name">${s.name}</div><div class="inner${stepHasShot(s)?' with-shot':''}"><div class="copy"><div class="tag"><i></i>${s.tag}</div>${s.h1?`<h1>${s.h1}</h1>`:`<h2>${s.h2}</h2>`}${stepBodyHtml(s)}${s.cta?`<div class="ctas"><a href="${s.cta===1?'app.html?mode=signup':'app.html'}" class="b1">${s.cta===1?'Começar':'Construir o primeiro degrau'}</a>${s.cta===1?'<a href="#s1" class="b2">Ver como funciona</a>':'<a href="app.html" class="b2">Entrar</a>'}</div>`:''}</div>${stepShotHtml(s)}</div></div>`).join('');
 rail.innerHTML=STEPS.map((s,i)=>`<a href="#s${i}" id="rl${i}">${s.n}<b></b></a>`).join('');
 track.innerHTML=STEPS.map((s,i)=>`<div class="slot" id="s${i}"></div>`).join('');
 const sts=STEPS.map((_,i)=>document.getElementById('st'+i)),rls=STEPS.map((_,i)=>document.getElementById('rl'+i));
-const ruler=document.getElementById('ruler'),meters=document.getElementById('meters'),horizon=document.getElementById('horizon'),far=document.getElementById('far'),mid=document.getElementById('mid'),near=document.getElementById('near'),stars=document.getElementById('stars');
+const ruler=document.getElementById('ruler'),horizon=document.getElementById('horizon'),far=document.getElementById('far'),mid=document.getElementById('mid'),near=document.getElementById('near'),stars=document.getElementById('stars');
 const legal=document.getElementById('legal'),legalYear=document.getElementById('legal-year');
 if(legalYear) legalYear.textContent=String(new Date().getFullYear());
 ruler.innerHTML=STEPS.map((s,i)=>`<div class="tk${i%2===0?' big':''}" style="top:${-i*TICK}px"><b></b><span>${i%2===0?String(i+1).padStart(2,'0'):''}</span></div>`).join('');
@@ -99,7 +99,6 @@ function frame(){
   horizon.style.top=AY+'px';horizon.style.transform=`translateY(${pe*SH*.45}px)`;
   ruler.style.transform=`translateY(${pe*TICK}px)`;
   stars.style.opacity=(.2+.62*(pe/(N-1))).toFixed(3);
-  meters.textContent=(pe*.18).toFixed(2).replace('.',',')+' m';
   walker.style.left=(AX-26)+'px';walker.style.top=(AY-30)+'px';
   const i=Math.round(p);
   if(i!==cur){cur=i;sts.forEach((el,k)=>el.classList.toggle('on',k===i));rls.forEach((el,k)=>el.classList.toggle('on',k<=i));sky.style.backgroundColor=STEPS[i].sky;altn.textContent=String(i+1).padStart(2,'0');walker.classList.remove('land');void walker.offsetWidth;walker.classList.add('land');clearTimeout(landT);landT=setTimeout(()=>walker.classList.remove('land'),360);if(legal)legal.classList.toggle('on',i===N-1)}
