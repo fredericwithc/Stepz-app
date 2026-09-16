@@ -81,8 +81,8 @@ h2{font-size:clamp(21px,min(2.6vw,4.6vh),34px);font-weight:700;letter-spacing:-1
 @keyframes land{0%{transform:translateY(-9px) scaleY(1.14)}55%{transform:translateY(0) scaleY(.82) scaleX(1.12)}100%{transform:none}}
 #walker .shadow{width:34px;height:7px;border-radius:50%;background:rgba(0,0,0,.45);filter:blur(3px);margin:6px 0 0 -7px}
 nav{position:fixed;z-index:6;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:18px clamp(20px,4vw,48px)}
-.brand{display:flex;gap:9px;align-items:center;font-weight:700;font-size:19px;letter-spacing:-.5px;color:#fff}
-.brand i{width:9px;height:9px;border-radius:50%;background:var(--purple);display:block}
+.brand{display:flex;align-items:center;line-height:0}
+.brand img{display:block;height:56px;width:auto}
 nav .in{font-size:14px;font-weight:500;color:rgba(255,255,255,.7);border:1px solid var(--line);padding:8px 16px;border-radius:100px;background:rgba(10,10,11,.45);backdrop-filter:blur(6px)}
 nav .in:hover{border-color:#fff;color:#fff}
 #rail{position:fixed;z-index:6;right:clamp(12px,2vw,22px);top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:flex-end;gap:10px}
@@ -95,6 +95,8 @@ nav .in:hover{border-color:#fff;color:#fff}
 #hint{position:fixed;z-index:6;left:50%;bottom:14px;transform:translateX(-50%);font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--faint);transition:opacity .4s}
 #hint.hide{opacity:0}
 #hint span{display:inline-block;animation:bob 1.7s ease-in-out infinite}
+#legal{position:fixed;z-index:6;left:50%;bottom:14px;transform:translateX(-50%);font-size:11px;letter-spacing:1.4px;color:var(--faint);opacity:0;pointer-events:none;transition:opacity .35s}
+#legal.on{opacity:1}
 @keyframes bob{50%{transform:translateY(4px)}}
 .slot{height:100vh}
 @media(max-width:1000px){.inner{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,.58fr) minmax(180px,.42fr);gap:14px}.inner .copy{overflow:hidden}.win .view{min-height:160px}.shotcap{display:none}#rail a{display:none}}
