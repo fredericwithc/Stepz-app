@@ -2378,58 +2378,6 @@ function ProfileMenu({ userEmail, onChangePassword, onLogout, isMobile, dateSubt
           <span>Caixa de sugestões</span>
         </button>
       ) : null}
-      {typeof window !== 'undefined' && typeof window.stepzSeedPrints === 'function' ? (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            setOpen(false);
-            const ok = window.confirm(
-              'Carregar dados de prints nesta conta?\n\nIsso SUBSTITUI tarefas, hábitos, metas, post-its e degraus atuais. Use uma conta descartável.'
-            );
-            if (!ok) return;
-            if (typeof window.stepzSeedPrints !== 'function') {
-              window.alert('Seed indisponível. Recarregue a página e tente de novo.');
-              return;
-            }
-            Promise.resolve(window.stepzSeedPrints()).catch((err) => {
-              window.alert(err && err.message ? err.message : 'Falha ao carregar dados de prints.');
-            });
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-          style={itemBtn}
-        >
-          <span aria-hidden style={{ fontSize: 14 }}>🖼</span>
-          <span>Carregar dados de prints</span>
-        </button>
-      ) : null}
-      {typeof window !== 'undefined' && typeof window.stepzWipePrints === 'function' ? (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            setOpen(false);
-            const ok = window.confirm(
-              'Limpar dados de prints nesta conta?\n\nIsso apaga tarefas, hábitos, metas, post-its e degraus e volta ao estado vazio.'
-            );
-            if (!ok) return;
-            if (typeof window.stepzWipePrints !== 'function') {
-              window.alert('Limpeza indisponível. Recarregue a página e tente de novo.');
-              return;
-            }
-            Promise.resolve(window.stepzWipePrints()).catch((err) => {
-              window.alert(err && err.message ? err.message : 'Falha ao limpar dados de prints.');
-            });
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-          style={itemBtn}
-        >
-          <span aria-hidden style={{ fontSize: 14 }}>🗑</span>
-          <span>Limpar dados de prints</span>
-        </button>
-      ) : null}
       {typeof onLogout === 'function' ? (
         <button
           type="button"

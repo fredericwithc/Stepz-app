@@ -58,7 +58,7 @@ cam.innerHTML=STEPS.map((s,i)=>`<div class="st${s.gold?' gold':''}${s.solo?' sol
 rail.innerHTML=STEPS.map((s,i)=>`<a href="#s${i}" id="rl${i}">${s.n}<b></b></a>`).join('');
 track.innerHTML=STEPS.map((s,i)=>`<div class="slot" id="s${i}"></div>`).join('');
 const sts=STEPS.map((_,i)=>document.getElementById('st'+i)),rls=STEPS.map((_,i)=>document.getElementById('rl'+i));
-const ruler=document.getElementById('ruler'),horizon=document.getElementById('horizon'),far=document.getElementById('far'),mid=document.getElementById('mid'),near=document.getElementById('near'),stars=document.getElementById('stars');
+const ruler=document.getElementById('ruler'),horizon=document.getElementById('horizon'),far=document.getElementById('far');
 const legal=document.getElementById('legal'),legalYear=document.getElementById('legal-year');
 if(legalYear) legalYear.textContent=String(new Date().getFullYear());
 ruler.innerHTML=STEPS.map((s,i)=>`<div class="tk${i%2===0?' big':''}" style="top:${-i*TICK}px"><b></b><span>${i%2===0?String(i+1).padStart(2,'0'):''}</span></div>`).join('');
@@ -93,20 +93,40 @@ function frame(){
   for(let i=0;i<N;i++){sts[i].style.left=(AX+x)+'px';sts[i].style.top=(AY-i*SH-PH)+'px';sts[i].style.height=PH+'px';sts[i].style.width=w[i]+'px';if(i<fl)camX+=w[i];x+=w[i]}
   camX+=ez(fr)*w[fl];
   cam.style.transform=`translate3d(${-camX}px,${pe*SH}px,0)`;
-  far.style.transform=`translate3d(0,${pe*SH*.3}px,0)`;
-  mid.style.transform=`translate3d(0,${pe*SH*.55}px,0)`;
-  near.style.transform=`translate3d(0,${pe*SH*.8}px,0)`;
+  far.style.transform=`translate3d(0,${pe*SH*.45}px,0)`;
   horizon.style.top=AY+'px';horizon.style.transform=`translateY(${pe*SH*.45}px)`;
   ruler.style.transform=`translateY(${pe*TICK}px)`;
-  stars.style.opacity=(.2+.62*(pe/(N-1))).toFixed(3);
   walker.style.left=(AX-26)+'px';walker.style.top=(AY-30)+'px';
   const i=Math.round(p);
   if(i!==cur){cur=i;sts.forEach((el,k)=>el.classList.toggle('on',k===i));rls.forEach((el,k)=>el.classList.toggle('on',k<=i));sky.style.backgroundColor=STEPS[i].sky;altn.textContent=String(i+1).padStart(2,'0');walker.classList.remove('land');void walker.offsetWidth;walker.classList.add('land');clearTimeout(landT);landT=setTimeout(()=>walker.classList.remove('land'),360);if(legal)legal.classList.toggle('on',i===N-1)}
   sizeShots();
   hint.classList.toggle('hide',scrollY>innerHeight*.35);
 }
-function tick(){if(innerWidth!==lastW||innerHeight!==lastH){lastW=innerWidth;lastH=innerHeight;dims();lastY=-1}if(scrollY!==lastY||lastY<0){lastY=scrollY;frame()}requestAnimationFrame(tick)}
+function tick(){if(innerWidth!==lastW||innerHeight!==lastH){lastW=innerWidth;lastH=innerHeight;dims();paintSerra();lastY=-1}if(scrollY!==lastY||lastY<0){lastY=scrollY;frame()}requestAnimationFrame(tick)}
 requestAnimationFrame(tick);
-let d='';for(let k=0;k<90;k++){d+=`<circle cx="${Math.random()*100}%" cy="${Math.random()*78}%" r="${Math.random()*1.3+.3}" fill="#fff" opacity="${Math.random()*.5+.15}"/>`}
-document.getElementById('stars').innerHTML=d;
+
+/* Serra em silhueta — mesmo algoritmo do Stepz Serra em Silhueta (semente 4) */
+const SERRA_SEED=4;
+const mul=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+function ridge(n,rough,rnd){let a=[rnd(),rnd()],r=rough;while(a.length<n){const b=[];for(let i=0;i<a.length-1;i++){b.push(a[i]);b.push((a[i]+a[i+1])/2+(rnd()-.5)*r)}b.push(a[a.length-1]);a=b;r*=.52}return a}
+function norm(a){const mn=Math.min(...a),mx=Math.max(...a);return a.map(v=>(v-mn)/(mx-mn||1))}
+function drawSerra(cv,seed){
+  if(!cv) return;
+  const d=devicePixelRatio||1,r=cv.getBoundingClientRect(),x=cv.getContext('2d');
+  if(!r.width||!r.height) return;
+  cv.width=r.width*d;cv.height=r.height*d;x.setTransform(d,0,0,d,0,0);
+  const w=r.width,h=r.height;x.clearRect(0,0,w,h);
+  for(let i=0;i<8;i++){
+    const t=i/7,rnd=mul(seed*53+i*97),hs=norm(ridge(65,1.15,rnd));
+    const base=h*(.46+t*.60),amp=h*(.34-t*.16);
+    x.beginPath();x.moveTo(0,h);hs.forEach((v,k)=>x.lineTo(k/(hs.length-1)*w,base-v*amp));x.lineTo(w,h);x.closePath();
+    const c=Math.round(74-t*58),p=Math.round(112-t*86);
+    x.fillStyle=`rgb(${c+8},${c},${p})`;x.fill();
+    x.globalAlpha=.07;x.fillStyle='#1c1833';x.fillRect(0,0,w,h);x.globalAlpha=1;
+  }
+  const g=x.createLinearGradient(0,h*.5,0,h);g.addColorStop(0,'rgba(10,10,18,0)');g.addColorStop(1,'rgba(10,10,18,.55)');
+  x.fillStyle=g;x.fillRect(0,h*.5,w,h*.5);
+}
+function paintSerra(){drawSerra(far,SERRA_SEED)}
+paintSerra();
 frame();
